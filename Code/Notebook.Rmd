@@ -13,12 +13,7 @@ output: html_notebook
 Import files
 
 ```{r}
-require(RCurl)
-```
-
-
-```{r}
-exdata <- read.delim(text = getURL("AIBL_Gene_Expression.txt", sep = " ", header = T)
+exdata <- read.delim("AIBL_Gene_Expression.txt", sep = " ", header = T)
 metadata <- read.delim("aibl-ids-6.0.0-201712010300.txt", sep = "\t", header = T)
 ids <- read.delim("AIBL_Gene_Expression_IDs.txt", header = F)
 ```
