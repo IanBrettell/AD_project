@@ -2,7 +2,9 @@
 title: "Happy git with R test"
 author: "Ian Brettell"
 date: "14 December 2017"
-output: github_document
+output: 
+  html_document: 
+    keep_md: yes
 ---
 
 ```{r}

@@ -3,23 +3,142 @@ title: "AD project notebook"
 author: "Ian Brettell"
 output: html_notebook
 ---
+***
+
+Initial setup:
+```{r setup, eval = FALSE}
+install.packages("here")
+install.packages("tidyverse")
+install.packages("rafalib")
+install.packages("dummies")
+source("https://bioconductor.org/biocLite.R")
+biocLite("limma")
+install.packages("yaml")
+install.packages("backports")
+install.packages("reshape2")
+install.packages("viridis")
+biocLite("made4")
+install.packages("caret")
+install.packages("ggfortify")
+
+# Note: Installing bioconductor created issues with creating the markdown preview, which appears to be fixed by installing the `yaml`, `backports` and `reshape2` packages afterwards.
+```
 
 ***
 
-### Exploratory analysis of mRNA expression data
+### 1. Exploratory analysis of mRNA expression data
 
 *7 December 2017*
 
 Import files
 
 ```{r}
-exdata <- read.delim("AIBL_Gene_Expression.txt", sep = " ", header = T)
-metadata <- read.delim("aibl-ids-6.0.0-201712010300.txt", sep = "\t", header = T)
-ids <- read.delim("AIBL_Gene_Expression_IDs.txt", header = F)
+library(here)
+exdata <- read.delim(here("Data", "Expression", "AIBL_Gene_Expression.txt"), sep = " ", header = T)
+dim(exdata)
+head(exdata)
+metadata <- read.delim(here("Data", "Expression", "aibl-ids-6.0.0-201712010300.txt"), sep = "\t", header = T)
+dim(metadata)
+head(metadata)
+ids <- read.delim(here("Data", "Expression", "AIBL_Gene_Expression_IDs.txt"), header = F)
+head(ids)
 ```
 
 
+***
+##### 1.1. Tidy and combine data
 
+Load packages
+
+```{r}
+library(tidyverse)
+library(rafalib)
+library(dummies)
+```
+
+Remove 'X' from columns in 'exdata'
+
+```{r}
+excols <- colnames(exdata)
+excols <- gsub("X", "", excols)
+colnames(exdata) <- excols
+head(excols)
+```
+
+Add age column and apoe4 columns
+
+```{r}
+metadata$Age <- as.numeric((as.Date(metadata$Progress.Summary.Date.of.NP.assessment,format=c("%d/%m/%Y")))-(as.Date(paste("15",substr(metadata$Demographic.YearMonthOfBirth,start=5,stop=6),substr(metadata$Demographic.YearMonthOfBirth,start=1,stop=4),sep="/"),format = c("%d/%m/%Y"))))/365.25
+summary(metadata$Age)
+#The minimum is -0.0027? To find this observation:
+which(metadata$Age < 40)
+# So there is only one individual with an age less than 40. The mistake was due to an error in the  collection of their date of birth data.
+metadata[6727, ]$Demographic.YearMonthOfBirth
+# Excluding them:
+hist(metadata[-6727, ]$Age)
+```
+
+```{r}
+unique(metadata$Demographic.ApoE.genotype)
+metadata$apoe4 <- as.factor(ifelse(metadata$Demographic.ApoE.genotype=="E2/E2"|metadata$Demographic.ApoE.genotype=="E3/E2"|metadata$Demographic.ApoE.genotype=="E3/E3",0,ifelse(metadata$Demographic.ApoE.genotype=="E4/E2"|metadata$Demographic.ApoE.genotype=="E4/E3"|metadata$Demographic.ApoE.genotype=="E4/E4",1,NA)))
+metadata %>% 
+  group_by(apoe4) %>% 
+  summarise(no_rows = length(apoe4))
+```
+
+Create binary PET status
+
+```{r}
+metadata$PET <- as.factor(ifelse(metadata$Image.PET.Amyloid.PIB_NAV.Status == "Positive" | metadata$Image.PET.Amyloid.Florbetapir.Status== "Positive" | metadata$Image.PET.Amyloid.Flutemetamol.Status == "Positive", "POS", ifelse(metadata$Image.PET.Amyloid.PIB_NAV.Status == "Negative" | metadata$Image.PET.Amyloid.Florbetapir.Status== "Negative" | metadata$Image.PET.Amyloid.Flutemetamol.Status == "Negative", "NEG",NA)))
+metadata %>% 
+  group_by(PET) %>% 
+  summarise(no_rows = length(PET))
+```
+
+Sort IDs and rename for joining
+
+```{r}
+ids <- data.frame(sort(ids[, 1]))
+colnames(ids) <- "AIBL.Id"
+as.vector(ids)
+```
+
+```{r, eval = F}
+missing_samples <- setdiff(1:287, ids) # This wasn't run.
+```
+
+
+Extract metadata for columns of interest and join to IDs
+
+```{r}
+meta1 <- filter(metadata, Collection == "1") %>% 
+  select(AIBL.Id,
+         Demographic.Sex,
+         PET,
+         apoe4,
+         Age) %>% 
+  right_join(ids, by = "AIBL.Id")
+str(meta1)
+
+```
+
+
+Create subset of data on which to test plots etc., comprising metadata of interest and 100 genes. 
+
+```{r}
+test.dat <- exdata[1:100, ] # extract first 100 rows
+test.dat <- data.frame(t(test.dat)) # transpose
+excols <- colnames(test.dat) # assign column names to vector
+excols <- gsub("X", "", excols) # remove the X prefixes
+colnames(test.dat) <- excols # replace the column names 
+
+test.dat$AIBL.Id <- as.integer(rownames(test.dat))
+test.dat <- left_join(meta1, test.dat, by = "AIBL.Id") %>% 
+  na.omit # exclude rows with NAs
+summary(test.dat[,3:4]) # get counts for PET and apoe4
+```
+
+***
 
 #### Meeting with JD 20171213
 
@@ -30,5 +149,153 @@ ids <- read.delim("AIBL_Gene_Expression_IDs.txt", header = F)
 *Screen out those that are interesting.Once we have a "top table"", pull out the top genes and go into KEGG, or write a function that finds all the other genes in the pathway for each of the genes.
 
 *Then go back and find the values for those genes - is there a reltaionship or not. 
+
+### 1.2. Create initial exploratory plot testing for just one gene.
+
+***
+
+Gather count column
+```{r}
+consol_test <- test.dat %>% 
+  gather(-c(AIBL.Id, Demographic.Sex, PET, apoe4, Age), key = gene, value = count)
+head(consol_test)
+```
+
+```{r}
+library(tidyverse)
+ggplot(consol_test, aes(x = gene, y = count)) +
+  geom_point(aes(colour = PET)) +
+  viridis::scale_colour_viridis(option = "viridis", discrete = T)
+```
+
+```{r}
+ggplot(consol_test, aes(x = gene, y = count)) +
+  geom_boxplot(aes(colour = PET)) +
+  viridis::scale_colour_viridis(option = "viridis", discrete = T)
+```
+
+```{r}
+ggplot(consol_test, aes(count)) +
+  geom_freqpoly(aes(colour = PET)) +
+  viridis::scale_colour_viridis(option = "viridis", discrete = T)
+```
+
+```{r}
+ggplot(consol_test, aes(count)) +
+  geom_freqpoly(aes(colour = apoe4))
+```
+
+Following this <https://www.r-bloggers.com/computing-and-visualizing-pca-in-r/>.
+
+Also used this for the plot <https://cran.r-project.org/web/packages/ggfortify/vignettes/plot_pca.html>
+
+```{r}
+logger <- test.dat[,6:105]
+logger <- log(logger)
+logger$AIBL.Id <- test.dat$AIBL.Id
+logger <- left_join(logger, test.dat[,1:5], by = "AIBL.Id")
+
+test.pca <- prcomp(logger[1:100], center = T, scale. = T)
+plot(test.pca)
+
+summary(test.pca)
+
+library(ggfortify)
+autoplot(test.pca, data = logger, colour = "PET") +
+  viridis::scale_colour_viridis(option = "viridis", discrete = T)
+```
+
+```{r}
+library(caret)
+trans <- preProcess(logger[,1:100],
+                    method = c("BoxCox", "center", "scale", "pca"))
+```
+
+
+***
+
+#### Analyse test data with `limma` package
+
+*15 December 2017*
+
+First, following the tutorial here: <http://bcb.dfci.harvard.edu/~aedin/courses/BiocDec2011/>, we will use the `made4` package
+
+```{r}
+library(limma)
+
+```
+
+
+```{r}
+ggplot(data = test.dat) +
+  geom_point(mapping = aes(x = AIBL.Id, y = test.dat$`2315554`, colour = Image.PET.Amyloid.PIB_NAV.Status))
+```
+
+
+#### Create PCA plots
+
+Using the 'dummies' package, create a new data frame converting all variables into integers.
+
+```{r}
+test.dat1 <- dummy.data.frame(test.dat, names = c("Demographic.Sex", 
+                                                  "Image.PET.Amyloid.PIB_NAV.Status",
+                                                  "Demographic.ApoE.genotype",
+                                                  "Progress.Summary.Date.of.NP.assessment"))
+```
+
+Divide the new data into test and train
+
+```{r}
+pca.train <- test.dat1[1:nrow(test.dat1),]
+pca.test <- test.dat1[-(1:nrow(test.dat1)),]
+```
+
+Run principal component analysis
+
+```{r}
+prin_comp <- prcomp(pca.train, scale. = T)
+```
+
+
+####################################################
+
+
+
+test.dat2 <- exdata[1:100, ]
+test.dat2 <- data.frame(t(test.dat2))
+
+prin_comp <- prcomp(test.dat2, scale. = T)
+names(prin_comp)
+
+#outputs the mean of variables
+prin_comp$center
+
+#outputs the standard deviation of variables
+prin_comp$scale
+
+#outputs the principal component loading
+prin_comp$rotation
+prin_comp$rotation[1:5,1:4]
+
+dim(prin_comp$x)
+
+biplot(prin_comp, scale = 0)
+std_dev <- prin_comp$sdev
+pr_var <- std_dev^2
+pr_var[1:10]
+
+prop_varex <- pr_var/sum(pr_var)
+prop_varex[1:20]
+
+plot(prop_varex, 
+     xlab = "Principal Component",
+     ylab = "Proportion of Variance Explained",
+     type = "b")
+
+plot(cumsum(prop_varex), xlab = "Principal Component",
+     ylab = "Cumulative Proportion of Variance Explained",
+     type = "b")
+***
+
 
 

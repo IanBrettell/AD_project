@@ -1,21 +1,21 @@
-####################################################
-# Author: Ian Brettell
-# Date created: 171207
-# Purpose: exploratory analysis of mRNA expression data
-####################################################
+#' ---
+#' title: "Exploratory analysis of mRNA expression data"
+#' author: "Ian Brettell"
+#' date: "7 December 2017"
+#' output: html_document
+#' ---
+
+install.packages("here")
+
+#' Import files
+
+library(here)
+exdata <- read.delim(here("Data", "Expression", "AIBL_Gene_Expression.txt"), sep = " ", header = T)
+metadata <- read.delim(here("Data", "Expression", "aibl-ids-6.0.0-201712010300.txt"), sep = "\t", header = T)
+ids <- read.delim(here("Data", "Expression", "AIBL_Gene_Expression_IDs.txt"), header = F)
 
 
-####################################################
-# IMPORT FILES
-####################################################
-
-exdata <- read.delim("AIBL_Gene_Expression.txt", sep = " ", header = T)
-metadata <- read.delim("aibl-ids-6.0.0-201712010300.txt", sep = "\t", header = T)
-ids <- read.delim("AIBL_Gene_Expression_IDs.txt", header = F)
-
-####################################################
-# LOAD PACKAGES
-####################################################
+#' Load packages
 
 library(tidyverse)
 library(rafalib)
@@ -33,7 +33,7 @@ colnames(exdata) <- excols
 
 # sort IDs and rename for joining
 
-ids <- data.frame(sort(ids))
+ids <- data.frame(sort(ids[, 1]))
 colnames(ids) <- "AIBL.Id"
 
 # missing_samples <- setdiff(1:287, ids)
