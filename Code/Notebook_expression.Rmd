@@ -365,7 +365,7 @@ head(exdata)
 metadata <- read.delim("~/R/AD_project/Data/Expression/aibl-ids-6.0.0-201712010300.txt", sep = "\t", header = T)
 dim(metadata)
 head(metadata)
-ids2 <- read.delim("~/R/AD_project/Data/Expression/AIBL_expression_set/AIBL_Gene_Expression_IDs_UpdtdDec2017.txt", sep = " ")
+ids2 <- read.delim("C:/Users/bre227/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression_IDs_UpdtdDec2017.txt", sep = " ")
 colnames(exdata) <- as.vector(ids2$x) # replace colnames with ids2
 
 # filter for those in ids2
