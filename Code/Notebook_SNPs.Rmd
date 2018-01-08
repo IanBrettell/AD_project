@@ -1,0 +1,496 @@
+---
+title: "R Notebook - SNP data"
+author: Ian Brettell
+output: html_notebook
+---
+
+*8 December 2017*
+
+Purpose: To determine whether the SNPs that are in LD with those targeted fall within (or without) the same genes
+
+Initial setup
+
+```{r, eval = FALSE}
+
+install.packages("tidyverse")
+
+source("https://bioconductor.org/biocLite.R")
+biocLite()
+biocLite("biomaRt")
+
+biocLite("GenomicRanges")
+library(GenomicRanges)
+biocLite("Homo.sapiens")
+library(Homo.sapiens)
+biocLite("stephenturner/annotables")
+library(annotables)
+biocLite("ensemblVEP")
+library(ensemblVEP)
+```
+
+
+## 1.1 Import files
+
+```{r}
+aibl_snps <- read.delim("C:/Users/bre227/Dropbox/eQTL/Data/Expanded SNP set/AIBLgene_SNP_LIST_04032015.tsv")
+snap_edit <- read.delim("C:/Users/bre227/Dropbox/eQTL/Data/Expanded SNP set/snapResults_edit.txt")
+snap <- read.delim("C:/Users/bre227/Dropbox/eQTL/Data/Expanded SNP set/snapResults.txt")
+```
+
+## 1.2 Combine datasets
+
+Note: 'snap_edit' has removed all SNPs from 'snap' that did not have proxies.
+
+```{r}
+# How many SNPs are there in snap_edit?
+length(unique(snap_edit$SNP)) # Shows that 557 have been removed from aibl_snps. 
+# How many genes are there in aibl_snps?
+length(unique(aibl_snps$GENE))
+# How many aibl_snps don't have an associated gene?
+which(aibl_snps$GENE == "")
+# One entry has "-" in the gene column.
+which(aibl_snps$GENE == "-") # shows that there is 1 additional SNP with no associated gene
+length(setdiff(aibl_snps$SNP, snap_edit$SNP)) # same number as above - 557 removed.
+# How many unique proxy SNPs?
+length(unique(snap_edit$Proxy))
+```
+
+```{r}
+library(tidyverse)
+AIBLdummy <- dplyr::select(aibl_snps, SNP, GENE) # creates dummy data frame with just two variables
+snap2 <- left_join(snap_edit, AIBLdummy, by = "SNP") # combine data frames
+rm(AIBLdummy) # remove dummy
+snap2 <- dplyr::select(snap2, SNP, SNP_gene = "GENE", dplyr::everything())# reorder columns
+```
+
+*19 December 2017*
+
+## 1.3 Get gene names and locations for AIBL_snps
+
+Create vector of aibl_snps
+
+```{r}
+snps <- as.vector(aibl_snps$SNP)
+```
+
+Get ensembl ids and loci
+
+```{r, results = "hide"}
+library(biomaRt)
+listMarts()
+mart_snps <- useMart('ENSEMBL_MART_SNP')
+listDatasets(mart_snps) # lists datasets available
+mart_snps <- useMart('ENSEMBL_MART_SNP', 'hsapiens_snp')
+```
+
+```{r}
+SNP_genes <- getBM(attributes = c("refsnp_id", "chr_name", "chrom_start", "chrom_end", "ensembl_gene_stable_id"),
+                     filters = "snp_filter",
+                     values = snps,
+                     mart = mart_snps)
+```
+
+See how many SNPs returned results
+```{r}
+length(unique(SNP_genes$refsnp_id))
+```
+
+Create `ensembl_ids' vector of unique ensembl gene ids from 'SNP_genes'
+
+```{r}
+ensembl_ids <- unique(SNP_genes$ensembl_gene_stable_id)
+```
+
+Use 'ensembl_ids' to get loci and hgnc symbols for genes
+
+```{r, results = "hide"}
+listMarts()
+mart_genes <- useMart('ENSEMBL_MART_ENSEMBL')
+listDatasets(mart_genes)
+mart_genes <- useMart('ENSEMBL_MART_ENSEMBL', 'hsapiens_gene_ensembl')
+```
+
+```{r}
+ensembl_genes <- getBM(attributes = c("ensembl_gene_id", "chromosome_name", "start_position", "end_position", "strand", "hgnc_symbol"),
+                       filters = "ensembl_gene_id",
+                       values = ensembl_ids,
+                       mart = mart_genes)
+```
+
+Bind both tables by ensembl_id to give full table of genes associated with the AIBL snps
+
+```{r}
+SNP_genes_full <- left_join(SNP_genes, ensembl_genes, by = c("ensembl_gene_stable_id" = "ensembl_gene_id"))
+```
+
+<!---
+This tests whether we can remove the rows that returned "LRG..." in the 'ensemble_gene_stable_id' column without losing any information.
+```{r}
+test <- SNP_genes_full[grep("LRG", SNP_genes_full$ensembl_gene_stable_id), ] # creates data frame with just "LRG" rows (161 rows total)
+test2 <- SNP_genes_full[-grep("LRG", SNP_genes_full$ensembl_gene_stable_id), ] # creates data frame with no "LRG" rows
+setdiff(test$refsnp_id, test2$refsnp_id) # tests whether there are any differences between the refsnp_ids of 'test' and 'test2' (that is, if there are differences, the "LRG" rows would not be duplicates). Returns 'character(0)'
+which((test$refsnp_id %in% test2$refsnp_id) == "FALSE") # just to make sure, we test again whether there were any non-matches. Returns 'integer(0), i.e. all refsnp_ids are in both 'test' and 'test2'.
+rm(test)
+rm(test2)
+```
+--->
+
+Remove duplicate rows with "LRG..." in the 'ensembl_gene_stable_id' column
+
+```{r}
+SNP_genes_full <- SNP_genes_full[-grep("LRG", SNP_genes_full$ensembl_gene_stable_id), ]
+dim(SNP_genes_full)
+length(unique(SNP_genes_full$refsnp_id))
+length(unique(SNP_genes_full$ensembl_gene_stable_id))
+
+# SNP_genes_full$ensembl_gene_stable_id has blank entries - replace with 'NA'
+SNP_genes_full$ensembl_gene_stable_id[SNP_genes_full$ensembl_gene_stable_id == ""] <- NA
+length(unique(SNP_genes_full$refsnp_id[!is.na(SNP_genes_full$ensembl_gene_stable_id)]))
+
+```
+
+
+## 1.4 Get gene names and locations for proxy snps
+
+Create vector of proxy snps
+
+```{r}
+proxy_snps <- as.vector(unique(snap_edit$Proxy))
+length(proxy_snps)
+```
+
+Get ensembl ids and loci for proxies
+
+```{r, results = "hide"}
+library(biomaRt)
+listMarts()
+mart_snps <- useMart('ENSEMBL_MART_SNP')
+listDatasets(mart_snps) # lists datasets available
+mart_snps <- useMart('ENSEMBL_MART_SNP', 'hsapiens_snp')
+
+proxy_genes <- getBM(attributes = c("refsnp_id", "chr_name", "chrom_start", "chrom_end", "ensembl_gene_stable_id"),
+                     filters = "snp_filter",
+                     values = proxy_snps,
+                     mart = mart_snps)
+```
+
+
+See how many SNPs returned results loci information
+```{r}
+length(unique(proxy_genes$refsnp_id))
+```
+
+
+<!-- Again, testing whether we can remove the rows that returned "LRG..." in the 'ensemble_gene_stable_id' column without losing any information.
+```{r}
+test <- proxy_genes[grep("LRG", proxy_genes$ensembl_gene_stable_id), ] # creates data frame with just "LRG" rows (161 rows total)
+test2 <- proxy_genes[-grep("LRG", proxy_genes$ensembl_gene_stable_id), ] # creates data frame with no "LRG" rows
+setdiff(test$refsnp_id, test2$refsnp_id) # tests whether there are any differences between the refsnp_ids of 'test' and 'test2' (that is, if there are differences, the "LRG" rows would not be duplicates). Returns 'character(0)'
+which((test$refsnp_id %in% test2$refsnp_id) == "FALSE") # just to make sure, we test again whether there were any non-matches. Returns 'integer(0), i.e. all refsnp_ids are in both 'test' and 'test2'.
+rm(test)
+rm(test2)
+```
+--->
+
+Remove rows with "LRG" in 'ensemble_gene_stable_id'
+
+```{r}
+proxy_genes <- proxy_genes[-grep("LRG", proxy_genes$ensembl_gene_stable_id), ]
+dim(proxy_genes)
+```
+
+Create `ensembl_ids' vector of unique ensembl gene ids from 'proxy_genes'
+
+```{r}
+ensembl_ids_proxies <- unique(proxy_genes$ensembl_gene_stable_id)
+length(ensembl_ids_proxies)
+```
+
+Use 'ensembl_ids' to get loci and hgnc symbols for genes
+
+```{r, results = "hide"}
+listMarts()
+mart_genes <- useMart('ENSEMBL_MART_ENSEMBL')
+listDatasets(mart_genes)
+mart_genes <- useMart('ENSEMBL_MART_ENSEMBL', 'hsapiens_gene_ensembl')
+```
+
+```{r, results = "hide"}
+ensembl_proxy_genes <- getBM(attributes = c("ensembl_gene_id", "chromosome_name", "start_position", "end_position", "strand", "hgnc_symbol"),
+                       filters = "ensembl_gene_id",
+                       values = ensembl_ids_proxies,
+                       mart = mart_genes)
+```
+
+Bind both tables by ensembl_id to give full table of genes associated with the AIBL snps
+
+```{r}
+proxy_genes_full <- left_join(proxy_genes, ensembl_proxy_genes, by = c("ensembl_gene_stable_id" = "ensembl_gene_id"))
+dim(proxy_genes_full)
+```
+
+## 1.5 Determine differences between genes in SNP and proxy lists
+
+Find out how many unique genes there are in the SNP and proxy lists
+
+```{r}
+length(unique(SNP_genes_full$ensembl_gene_stable_id))
+length(unique(proxy_genes_full$ensembl_gene_stable_id))
+```
+
+
+Find out how many proxy genes are different from the SNP genes, and vice versa
+
+```{r}
+length(setdiff(SNP_genes_full$ensembl_gene_stable_id, proxy_genes_full$ensembl_gene_stable_id))
+length(setdiff(proxy_genes_full$ensembl_gene_stable_id, SNP_genes_full$ensembl_gene_stable_id))
+```
+So 126/621 genes in the AIBL SNP list  are not in the proxy list, and 608/1103 genes in the proxy list are not in the SNP list.
+
+*22 December 2017*
+
+## g:Profiler test
+
+Used the g:Profiler tool (<https://biit.cs.ut.ee/gprofiler/>) to see whether it could get the location of some of the 9 SNPs that BiomaRt couldn't detect.
+
+Pull out those 9 SNP ids
+
+```{r}
+setdiff(aibl_snps$SNP, SNP_genes$refsnp_id)
+```
+
+Write text file
+
+```{r}
+write.table(setdiff(aibl_snps$SNP, SNP_genes$refsnp_id), 
+            file = "C:/Users/bre227/Documents/R/AD_project/Working/missing_aibl_snps.txt",
+            quote = F,
+            col.names = F,
+            row.names = F)
+```
+
+Copy and paste text of file into g:SNPense, and then read output.
+
+```{r}
+gout <- read.csv("C:/Users/bre227/Documents/R/AD_Project/Working/missing_aibl_snps_gprofiler_output.csv",
+         header = T,
+         sep = "\t")
+```
+
+Provided details for two of the nine missing SNPs. To test whether it works for all the SNPs that were identified with BioMart:
+
+```{r}
+write.table(as.vector(aibl_snps$SNP),
+            file = "C:/Users/bre227/Documents/R/AD_project/Working/aibl_snps.txt",
+            quote = F,
+            col.names = F,
+            row.names = F)
+
+gout2 <- read.csv("C:/Users/bre227/Documents/R/AD_Project/Working/aibl_snps_gprofiler_output.csv",
+         header = T,
+         sep = "\t")
+```
+
+For how many SNPs can g:Profiler not find location information?
+
+```{r}
+# replace blanks with NA
+gout2$chr_pos[gout2$chr_pos == "Not found"] <- NA 
+length(which(is.na(gout2$chr_pos)))
+```
+
+This suggests that the best approach would be to integrate the two methods (biomaRt and g:Profiler).
+
+***
+
+*8 January 2018*
+
+### Read in genotype data
+
+```{r}
+library(readxl)
+gtypes <- read_excel("C:/Users/bre227/Dropbox/eQTL/Data/Expanded SNP set/AIBLgene_SNP_Data_by_Gene_Expression_IDs.xlsx",
+                col_names = F)
+```
+
+Note that the AIBL IDs are incorrect in the excel file. We attach the correct IDs using the 'AIBL_Gene_Expression_IDs_UpdtdDec2017.txt' file, **assuming that both sets of IDs, when sorted, correspond with each other**.
+
+```{r}
+ids2 <- read.delim("C:/Users/bre227/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression_IDs_UpdtdDec2017.txt", sep = " ")
+ids2 <- as.vector(sort(ids2$x))
+gtypes$AIBL_ID_new <- c(NA, NA, NA, "AIBL_ID_new", as.vector(ids2))
+gtypes <- dplyr::select(gtypes, AIBL_ID_new, dplyr::everything()) # reorder to bring AIBL_ID_new to the front
+```
+
+
+```{r, results = "hide"}
+library(tidyverse)
+gts <- as.tibble(t(gtypes)) # transpose data frame
+gts <- as.tibble(lapply(gts, function(x) { # convert all 'X_X' to NA
+  gsub("X_X", NA, x)
+}))
+```
+
+Because some individuals failed to record a result for some SNPs in addition to the few individuals for whom no results were recorded, we will manually remove the latter.
+```{r}
+colnames(gts) <- gts[3, ] # make the column names the (incorrect) AILB IDs
+
+# some individuals have data missing for ~1,500 of the ~2,000 SNPs, e.g.
+
+length(which(is.na(gts$`127`)) == TRUE)
+
+x <- sapply(gts, function(x) { # gets TRUE or FALSE for each column with data missing for more than 1000 SNPs
+  length(which(is.na(x) == TRUE)) > 1000
+})
+y <- which(x == TRUE) # creates vector of column indexes for which it is true
+gts[y] <- NULL # removes those columns
+
+colnames(gts) <- c("chromosome", "position", "gene", "snp", gts[1, 5:ncol(gts)]) # replace column names with correct AIBL IDs
+
+gts <- gts[-c(1:3), ] # remove extraneous first three rows
+
+colnames(gtypes) <- gtypes[2, ] # create column <-  names
+gtypes <- gtypes[-c(1,2), ]# remove first two columns with extraneous information
+```
+
+Write table to working folder
+
+```{r}
+write.table(gts, file = "C:/Users/bre227/Documents/R/AD_project/Working/genotype_data.txt", sep = "\t")
+```
+
+
+
+<!--ignore below
+
+## 1.3 Get annotation for proxy SNPs
+
+Create vector with unique SNPs
+
+```{r}
+uq_proxies <- as.vector(unique(snap$Proxy)) 
+```
+
+Access SNP mart
+
+```{r}
+library(biomaRt)
+listMarts() # lists marts available
+mart <- useMart('ENSEMBL_MART_SNP')
+listDatasets(mart) # lists datasets available
+mart <- useMart('ENSEMBL_MART_SNP', 'hsapiens_snp')
+```
+
+Get loci for SNPs
+
+```{r}
+proxy_loci <- getBM(attributes = c("refsnp_id", "chr_name", "chrom_start", "chrom_end"),
+                    filters = c("snp_filter"),
+                    values = c(uq_proxies),
+                    mart = mart)
+```
+
+
+
+<!--Ignore below
+
+create vectors for start and end loci
+proxy_start <- as.vector(proxy_loci$chrom_start)
+proxy_end <- as.vector(proxy_loci$chrom_end)
+
+ access gene mart
+listMarts()
+gene_mart <- useMart('ENSEMBL_MART_ENSEMBL')
+listDatasets(gene_mart)
+gene_mart <- useMart('ENSEMBL_MART_ENSEMBL', 'hsapiens_gene_ensembl')
+
+get genes associated with proxy SNPs
+proxy_gns <- getBM(attributes = c("start_position", "hgnc_symbol"),
+                   #filters = c("start", "end"),
+                   #values = list(proxy_start, proxy_end),
+                   #mart = gene_mart) # query: command takes four hours to run?
+
+output was 49 million observations of 2 variables??
+
+
+
+# Alternative method to the one above
+
+genelist <- grch38 %>% 
+  dplyr::select(symbol, chr, start, end)
+gns <- makeGRangesFromDataFrame(genelist,
+                                keep.extra.columns = T,
+                                ignore.strand = T,
+                                seqnames.field = "chr",
+                                start.field = "start",
+                                end.field = "end")
+
+proxygr <- makeGRangesFromDataFrame(proxy_loci,
+                                    ignore.strand = T,
+                                    seqnames.field = "chr_name",
+                                    start.field = "chrom_start",
+                                    end.field = "chrom_end")
+
+overlapGenes <- data.frame(findOverlaps(proxygr, gns))
+regionsWIthHits <- data.frame(proxygr[overlapGenes$queryHits])
+regionsWIthHits$genes <- gns$symbol[overlapGenes$subjectHits]
+length(unique(regionsWIthHits$genes)) # returns 734
+
+
+## test using online BioMart
+
+#mart <- useMart('ENSEMBL_MART_SNP', 'hsapiens_snp')
+#proxy_loci <- getBM(attributes = c("refsnp_id", "chr_name", "chrom_start", "chrom_end", "chrom_strand"),
+                    #filters = c("snp_filter"),
+                    #values = c(uq_proxies),
+                    #mart = mart) # showed that all ~18,000 SNPs lie on the forward strand??
+
+#proxies_500 <- head(snap2, n = 500) %>% 
+#  dplyr::select(Proxy, Chromosome, Coordinate_HG18)
+#colnames(proxies_500)[colnames(proxies_500) == "Coordinate_HG18"] <- "Start"
+#proxies_500$Strand <- 1
+#chr <- as.character(proxies_500$Chromosome)
+#chr <- gsub("chr", "", chr)
+#proxies_500$Chromosome <- chr
+#rm(chr)
+#proxies_500$loci <- paste(proxies_500$Chromosome, proxies_500$Start, proxies_500$Start, "1", sep = ":")
+#write.table(proxies_500$loci, file = "biomart.test.txt", quote = F, row.names = F, col.names = F)
+
+## only returned a handfull of entries, instead of the expectd 500
+
+##################################################
+
+# test using ensemblVEP package
+
+library(ensemblVEP)
+write.table(uq_proxies, "~/R/AD Project/Working/uq_proxies.txt", quote = F, row.names = F, col.names = F)
+## submit file to "http://www.ensembl.org/Tools/VEP" and use output as follows
+
+uq_proxies_output <- read.delim("~/R/AD Project/Working/uq_proxies_VEP_output.txt", header = T)
+
+# extract unique SNPid and gene names
+prxy_snpsandgns <- dplyr::select(uq_proxies_output, X.Uploaded_variation, SYMBOL)
+uq_prxy_snpsandgns <- prxy_snpsandgns[!duplicated(prxy_snpsandgns), ]
+
+# produce same file but for AIBL SNPs
+
+AIBL_SNPs <- as.vector(unique(aibl_snps$SNP))
+write.table(AIBL_SNPs, "~/R/AD Project/Working/AIBL_SNPs.txt", quote = F, row.names = F, col.names = F)
+
+# extract unique SNPid and gene names
+
+aibl_snps_output <- read.delim("~/R/AD Project/Working/AIBL_SNPs_VEP_output.txt", header = T)
+AIBL_snpsandgns <- dplyr::select(aibl_snps_output, X.Uploaded_variation, SYMBOL)
+uq_AIBL_snpsandgns <- AIBL_snpsandgns[!duplicated(AIBL_snpsandgns), ]
+
+########################
+
+# through bioconductor
+library(ensemblVEP)
+myparam <- VEPFlags(version = max(unlist(currentVEP())),
+                    scriptPath = character(),
+                    flags <- list(vcf = F, 
+                                 everything,
+                                 output_file = "~/R/AD Project/Working/AIBL_SNPs.txt"))
+
+-->
