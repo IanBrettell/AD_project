@@ -8,7 +8,7 @@ output: html_notebook
 Initial setup:
 ```{r setup, eval = FALSE}
 install.packages("here")
-install.packages("tidyverse")
+install.packages("tidyverse", dependencies = TRUE)
 install.packages("rafalib")
 install.packages("dummies")
 source("https://bioconductor.org/biocLite.R")
@@ -31,323 +31,10 @@ install.packages("VennDiagram")
 install.packages("Grid")
 biocLite("gage")
 biocLite("GSEABase")
+biocLite("KEGGREST")
 
 # Note: Installing bioconductor created issues with creating the markdown preview, which appears to be fixed by installing the `yaml`, `backports` and `reshape2` packages afterwards.
 ```
-
-***
-<!--
-## 1. Exploratory analysis of mRNA expression data
-
-*7 December 2017*
-
-Import files
-
-```{r}
-library(backports)
-library(here)
-exdata <- read.delim(here("Data", "Expression", "AIBL_Gene_Expression.txt"), sep = " ", header = T)
-dim(exdata)
-head(exdata)
-metadata <- read.delim(here("Data", "Expression", "aibl-ids-6.0.0-201712010300.txt"), sep = "\t", header = T)
-dim(metadata)
-head(metadata)
-ids <- read.delim(here("Data", "Expression", "AIBL_Gene_Expression_IDs.txt"), header = F)
-dim(ids)
-```
-
-
-***
-### 1.1. Tidy and combine data
-
-Load packages
-
-```{r, results = "hide"}
-library(tidyverse)
-library(rafalib)
-library(dummies)
-```
-
-Remove 'X' from columns in 'exdata'
-
-```{r}
-excols <- colnames(exdata) # create vector of sample ids using exdata
-excols <- gsub("X", "", excols) # remove the 'X' prefix from sample ids
-colnames(exdata) <- excols # replace exdata colnames
-head(excols)
-```
-
-Add age column and apoe4 columns
-
-```{r}
-metadata$Age <- as.numeric((as.Date(metadata$Progress.Summary.Date.of.NP.assessment,format=c("%d/%m/%Y")))-(as.Date(paste("15",substr(metadata$Demographic.YearMonthOfBirth,start=5,stop=6),substr(metadata$Demographic.YearMonthOfBirth,start=1,stop=4),sep="/"),format = c("%d/%m/%Y"))))/365.25
-summary(metadata$Age)
-```
-
-```{r}
-#The minimum is -0.0027? To find this observation:
-which(metadata$Age < 40)
-```
-
-So there is only one individual with an age less than 40. The mistake was due to an error in the  collection of their date of birth data.
-```{r}
-metadata[6727, ]$Demographic.YearMonthOfBirth
-```
-
-Excluding them:
-```{r}
-hist(metadata[-6727, ]$Age)
-```
-
-```{r}
-unique(metadata$Demographic.ApoE.genotype)
-metadata$apoe4 <- as.factor(ifelse(metadata$Demographic.ApoE.genotype=="E2/E2"|metadata$Demographic.ApoE.genotype=="E3/E2"|metadata$Demographic.ApoE.genotype=="E3/E3",0,ifelse(metadata$Demographic.ApoE.genotype=="E4/E2"|metadata$Demographic.ApoE.genotype=="E4/E3"|metadata$Demographic.ApoE.genotype=="E4/E4",1,NA)))
-metadata %>% 
-  group_by(apoe4) %>% 
-  summarise(no_rows = length(apoe4))
-```
-
-Create binary PET status
-
-```{r}
-metadata$PET <- as.factor(ifelse(metadata$Image.PET.Amyloid.PIB_NAV.Status == "Positive" | metadata$Image.PET.Amyloid.Florbetapir.Status== "Positive" | metadata$Image.PET.Amyloid.Flutemetamol.Status == "Positive", "POS", ifelse(metadata$Image.PET.Amyloid.PIB_NAV.Status == "Negative" | metadata$Image.PET.Amyloid.Florbetapir.Status== "Negative" | metadata$Image.PET.Amyloid.Flutemetamol.Status == "Negative", "NEG",NA)))
-metadata %>% 
-  group_by(PET) %>% 
-  summarise(no_rows = length(PET))
-```
-
-Sort IDs and rename for joining
-
-```{r}
-ids <- data.frame(sort(ids[, 1]))
-colnames(ids) <- "AIBL.Id"
-as.vector(ids)
-```
-
-```{r, eval = F}
-missing_samples <- setdiff(1:287, ids) # This wasn't run.
-```
-
-
-Extract metadata for columns of interest and join to IDs
-
-```{r}
-meta1 <- filter(metadata, Collection == "1") %>% 
-  select(AIBL.Id,
-         Demographic.Sex,
-         PET,
-         apoe4,
-         Age) %>% 
-  right_join(ids, by = "AIBL.Id")
-str(meta1)
-
-```
-
-
-Create subset of data on which to test plots etc., comprising metadata of interest and 100 genes. 
-
-```{r}
-test.dat <- exdata[1:100, ] # extract first 100 rows
-test.dat <- data.frame(t(test.dat)) # transpose
-excols <- colnames(test.dat) # assign column names to vector
-excols <- gsub("X", "", excols) # remove the X prefixes
-colnames(test.dat) <- excols # replace the column names 
-
-exrows <- rownames(test.dat)
-exrows <- gsub("X", "", exrows)
-rownames(test.dat) <- exrows
-test.dat$AIBL.Id <- as.integer(rownames(test.dat))
-test.dat <- left_join(meta1, test.dat, by = "AIBL.Id") %>% 
-  na.omit # exclude rows with NAs
-summary(test.dat[,3:4]) # get counts for PET and apoe4
-# check that we are left with the right amount of observations
-length(which(!is.na(meta1$PET) & !is.na(meta1$apoe4), arr.ind = T))
-
-```
-
-***
-
-#### Meeting with JD
-
-*13 December 2017*
-
-*Use the `limma` package to make volcano plots, for both "PET status" (yes or no) and APOE4 (yes or no)
-
-*Do all possible pairwise combinations of the above two, i.e. PET yes & APOE no, APOE yes & PET no, etc.
-
-*Screen out those that are interesting.Once we have a "top table"", pull out the top genes and go into KEGG, or write a function that finds all the other genes in the pathway for each of the genes.
-
-*Then go back and find the values for those genes - is there a reltaionship or not. 
-
-### 1.2. Create initial exploratory plots
-
-***
-
-Gather expression columns into a `count` column.
-```{r}
-consol_test <- test.dat %>% 
-  gather(-c(AIBL.Id, Demographic.Sex, PET, apoe4, Age), key = gene, value = count)
-head(consol_test)
-```
-
-```{r}
-library(tidyverse)
-ggplot(consol_test, aes(x = gene, y = count)) +
-  geom_point(aes(colour = PET)) +
-  viridis::scale_colour_viridis(option = "viridis", discrete = T)
-```
-The scatterplot is not very informative, so we'll try a boxplot.
-
-```{r}
-ggplot(consol_test, aes(x = gene, y = count)) +
-  geom_boxplot(aes(colour = PET)) +
-  viridis::scale_colour_viridis(option = "viridis", discrete = T)
-```
-
-```{r}
-ggplot(consol_test, aes(count)) +
-  geom_freqpoly(aes(colour = PET)) +
-  viridis::scale_colour_viridis(option = "viridis", discrete = T)
-```
-
-```{r}
-ggplot(consol_test, aes(count)) +
-  geom_freqpoly(aes(colour = apoe4))
-```
-This is perhaps interesting - the samples with no apoe4 gene show higher expression levels.
-
-Following this <https://www.r-bloggers.com/computing-and-visualizing-pca-in-r/>.
-
-Also used this for the plot <https://cran.r-project.org/web/packages/ggfortify/vignettes/plot_pca.html>
-
-```{r, results = "hide"}
-logger <- test.dat[,6:105] # extract expression measurements
-logger <- log(logger) # log transform them
-logger$AIBL.Id <- test.dat$AIBL.Id # add the AIBL.Id
-logger <- left_join(logger, test.dat[,1:5], by = "AIBL.Id") # rejoin metadata
-
-test.pca <- prcomp(logger[1:100], center = T, scale. = T)
-plot(test.pca)
-```
-
-```{r}
-library(ggfortify)
-autoplot(test.pca, data = logger, colour = "PET") +
-  viridis::scale_colour_viridis(option = "viridis", discrete = T)
-```
-
-***
-
-*18 December 2017*
-
-Plot for whole dataset
-```{r}
-exdata1 <- as_tibble(exdata)
-exdata1 <- as_tibble(t(exdata1)) # transpose to put samples in rows, genes in columns
-colnames(exdata1) <- rownames(exdata) # add genes names
-exdata1$AIBL.Id <- as.integer(colnames(exdata)) # add 'AIBL.Id' column
-exdata2 <- left_join(meta1, exdata1, by = "AIBL.Id") %>% 
-  na.omit # add metadata and remove PET and apoe4 columns with 'NA'
-rownames(exdata2) <- exdata2$AIBL.Id # to ensure the labels in the plots reflect the AIBL.Ids
-
-# run PCA
-pca <- prcomp(exdata2[6:22016], center = T, scale. = T) # run PCA
-```
-
-```{r}
-plot(pca, type = "l")
-```
-
-Another, better version of the scree plot using the package `factoextra`.
-```{r}
-library(factoextra)
-fviz_eig(pca)
-```
-
-
-
-
-```{r}
-library(ggfortify)
-autoplot(pca, data = exdata2, colour = "PET", label = T) +
-  viridis::scale_colour_viridis(option = "viridis", discrete = T)
-```
-
-```{r}
-library(ggfortify)
-autoplot(pca, data = exdata2, colour = "apoe4", label = T)
-```
-*Consider excluding outlier individuals with AIBL.Ids 72 and 108.*
-
-```{r}
-qqnorm(pca$x[,2], pch = 20)
-```
-
-
-
-First, following the tutorial here: <http://bcb.dfci.harvard.edu/~aedin/courses/BiocDec2011/>, we will use the `made4` package
-
-```{r, results = "hide"}
-library(made4)
-```
-
-```{r}
-overview(exdata, labels = substring(colnames(exdata), 1, 5))
-```
-
-Following the tutorial here:
-<http://www.sthda.com/english/articles/31-principal-component-methods-in-r-practical-guide/118-principal-component-analysis-in-r-prcomp-vs-princomp/>, we tried using `princomp()` instead, as that uses 'spectral decomposition', which examines the covariances / correlations between variables (whereas `prcomp()` does so between individuals). However that failed, because it requires more observations than variables.
-
-***
-
-### 1.3. Use `limma` to analyse expression data.
-
-We first create an 'ExpressionSet' with genes on rows, and samples on columns, following the guide here: <https://www.bioconductor.org/packages/3.7/bioc/vignettes/Biobase/inst/doc/ExpressionSetIntroduction.pdf>
-
-```{r, results = "hide"}
-library(Biobase)
-```
-```{r}
-exprs <- as.matrix(t(exdata2[,6:22016])) # leaving behind the first 5 metadata columns
-minimalSet <- ExpressionSet(assayData = exprs)
-pData <- exdata2[,1:5]
-summary(pData)
-```
-
-```{r, results = "hide"}
-library(limma)
-```
-```{r}
-PET_apoe4 <- paste(pData$PET, pData$apoe4, sep = ".") # put PET/apoe4 combinations into a vector
-PET_apoe4
-
-PET_apoe4 <- factor(PET_apoe4, levels = c(unique(PET_apoe4))) # turn it into a factor
-design <- model.matrix(~0 + PET_apoe4) # create factor table for four combinations
-colnames(design) <- levels(PET_apoe4)
-fit <- lmFit(exprs, design)
-```
-
-Set four pair-wise contrasts of interest and compute the contrasts and moderated t-tests.
-
-```{r}
-cont.matrix <- makeContrasts(apoe4_for_PET_yes = POS.1 - POS.0,
-                             apoe4_for_PET_no = NEG.1 - NEG.0,
-                             PET_for_apoe4_yes = POS.1 - NEG.1,
-                             PET_for_apoe4_no = POS.0 - NEG.0,
-                             levels = design)
-fit2 <- contrasts.fit(fit, cont.matrix)
-fit2 <- eBayes(fit2)
-```
-
-Get the genes differentially expressed in each comparison
-
-```{r}
-topTable(fit2, coef = "apoe4_for_PET_yes")
-topTable(fit2, coef = "apoe4_for_PET_no")
-topTable(fit2, coef = "PET_for_apoe4_yes")
-topTable(fit2, coef = "PET_for_apoe4_no")
-```
--->
 
 ***
 *19 December 2017*
@@ -678,16 +365,6 @@ signif_PET_for_apoe4_no <- filter(res4, P.Value < 0.05)
 rm(list = ls(pattern = "res")) # remove results to clear working memory
 ```
 
-<!--
-Comparison table of number of statistically significant genes with vs without outliers
-```{r}
-a <- c(length(which(res1$P.Value < 0.05)), length(which(res2$P.Value < 0.05)), length(which(res3$P.Value < 0.05)), length(which(res4$P.Value < 0.05)))
-b <- c(length(which(res5$P.Value < 0.05)), length(which(res6$P.Value < 0.05)), length(which(res7$P.Value < 0.05)), length(which(res8$P.Value < 0.05)))
-outlier_comp_table <- data.frame(a, b)
-colnames(outlier_comp_table) <- c("outliers_in", "outliers_out")
-setdiff(outlier_comp_table$outliers_in, outlier_comp_table$outliers_out)
-```
--->
 
 ## 2.5 Get gene identifiers for microarray probes and identify significant genes.
 
@@ -787,14 +464,6 @@ nrow(signif_all)
 ```
 Therefore 592 genes are expressed differentially across at least two contrasts
 
-<!--
-# Check that all probes are accounted for in 'signif_all'
-
-setdiff(signif_apoe4_for_PET_yes$probe_id, signif_all$probe_id)
-setdiff(signif_apoe4_for_PET_no$probe_id, signif_all$probe_id)
-setdiff(signif_PET_for_apoe4_yes$probe_id, signif_all$probe_id)
-setdiff(signif_PET_for_apoe4_no$probe_id, signif_all$probe_id)
--->
 
 Bind gene ids to 'signif_all'
 ```{r}
@@ -832,6 +501,7 @@ length(which(rownames(exdata) %in% pid_all$probe_id == "TRUE"))
 # 2.7.1. Make Venn diagram of overlapping genes
 
 <!--
+```{r, eval = FALSE}
 ```{r, results = "hide"}
 library(VennDiagram)
 length(which(!is.na(sig_all2$P.Value.c1)))
@@ -991,6 +661,7 @@ venn2 <- draw.pairwise.venn(
 
 Attach gene data to PET 
 ```{r}
+library(tidyverse)
 sig_PET_pos_v_neg <- left_join(signif_PET_pos_v_neg, pid_all, by = "probe_id")
 length(which(!is.na(sig_PET_pos_v_neg$gene_symbol))) # to get number of genes with gene IDs
 ```
@@ -1027,6 +698,133 @@ gns1 <- GeneSet(gns, geneIdType = SymbolIdentifier(), setName = "PET_pos_v_neg")
 
 
 ```
+-->
+
+*8 January 2017*
+
+Before embarking on analysis using gage, we want to classify the significant genes into gene sets. First we attempt this using the g:GOSt function on the g:Profiler website (<https://biit.cs.ut.ee/gprofiler/>)
+
+```{r}
+write.table(sig_PET_pos_v_neg$gene_symbol[!is.na(sig_PET_pos_v_neg$gene_symbol)], "C:/Users/bre227/Documents/R/AD_project/Working/sig_PET_pos_v_neg_genes.txt",
+            quote = F,
+            col.names = F,
+            row.names = F)
+```
+
+
+**Note**: According to JD, this step should be saved for later. We will therefore attach write the table of 'sig_PET_pos_v_neg' to save us having to run the entire script at startup every day. 
+
+```{r}
+write.table(sig_PET_pos_v_neg,
+            "C:/Users/bre227/Documents/R/AD_project/Working/sig_PET_pos_v_neg.txt",
+            sep = "\t")
+```
+
+
+*9 January 2018* 
+
+### Meeting with JD
+
+MolsigDB - database for gene sets applicable for different diseases.
+
+Do correlation analysis on gene set.
+
+Do Chi square on outcome and SNP.
+
+* First take the AIBL SNPs, and find the other SNPs with which they are in LD. (Done)
+
+* Second, record the genotypes of those SNPs, and use them to infer the genotypes of the SNPs with which they are in LD.
+
+* Third, for each AIBL SNP, perform a linear model - lm(expression ~ rs#...), and lm(expression ~ rs#... + age, gender, apoe4)
+
+* Fourth, perform Chisquares for each rs#... and PET status
+
+  + 2000 AIBL SNPs -> chisquare L1
+  + 18,000 LD SNPs -> chisquare L2
++ **L1 + L2**
+
+### Return to KEGG
+
+To find the gene sets in which our significant genes lie, we can use the KEGG database, using KEGGREST (guide here: <http://bioconductor.org/packages/release/bioc/vignettes/KEGGREST/inst/doc/KEGGREST-vignette.html>.
+
+```{r}
+sig_PET_pos_v_neg <- read.table("C:/Users/bre227/Documents/R/AD_project/Working/sig_PET_pos_v_neg.txt",
+                                header = T)
+library(KEGGREST)
+g <- as.character(sig_PET_pos_v_neg$gene_symbol[!is.na(sig_PET_pos_v_neg$gene_symbol)]) # create vector of gene names (530 unique genes in total)
+kegids <- sapply(g, function(x){
+  keggFind("hsa", x)})
+# save to file to prevent having to run the above each time, because it is time-consuming
+save(kegids, file = "C:/Users/bre227/Documents/R/AD_project/Working/kegids.RData")
+```
+
+```{r obtain specific hsa matches for each gene symbol}
+# create a table of genes and the number of hsa id hits
+t <- lapply(kegids, length)
+t <- data.frame(unlist(t))
+t$gene <- rownames(t)
+rownames(t) <- seq(nrow(t))
+
+f <- lapply(kegids, function(x){ # pull hsa ids for all genes with only one hsa entry
+  if (length(x) == 1){
+    print(names(x))
+  }
+})
+
+g <- data.frame(unlist(f)) # convert into data frame
+g$gene <- rownames(g)
+
+library(dplyr)
+h <- left_join(t, g, by = "gene")# join with table
+colnames(h)[3] <- "hsa_id"
+  
+
+names(kegids$COA5[grep("\\bCOA5\\b", kegids$COA5)])
+
+
+
+j <- lapply(kegids, function(x){ # pull hsa ids for genes that have an exact match
+  if (length(x) > 1 && length(names(x)[grep(paste("\\b", x, "\\b", sep = ""), x)]) == 1){
+    print(names(x))
+  }
+})
+
+lapply(kegids, function(x){
+  length(names(x[grep(paste("\\b", x, "\\b", sep = ""), x)])) > 1
+})
+
+k <- data.frame(unlist(j))# convert into data frame
+k$gene <- rownames(k)
+colnames(k)[1] <- "hsa_id"
+l <- merge(h, k, by = "gene", all.x = T, sort = F)
+
+i <- kegids[c(1,2,5)]
+paste("\\b", "COA5", "\\b", sep = "")
+length(names(kegids$COA5[grep("\\bCOA5\\b", kegids$COA5)]))
+length(names(kegids$GATA2[grep("\\bGATA2\\b", kegids$GATA2)]))
+length(names(kegids$C21orf2[grep("\\bC21orf2\\b", kegids$C21orf2)]))
+
+lapply(i, function(x){
+  length(names(x[grep(paste("\\b", x, "\\b", sep = ""), x)])) == 1
+})
+
+lapply(i, function())
+
+## test
+
+m <- kegids[1]
+lapply(m, function(x){
+  if ((length(x) > 1) && (length(names(x[grep(paste("\\b", x, "\\b", sep = ""), x)])) == 1)){
+    print(names(x[grep(paste("\\b", x, "\\b", sep = ""), x)]))
+  }
+})
+
+
+
+lapply(m, function(x){
+  print(names(x[grep(paste("\\b", x, "\\b", sep = ""), x)]))
+})
+```
 
 <!-- ## This block of code sought to use g:Profiler to fill the gaps of the gene identities associated with the probes that were not filled through Affy process. We ran into trouble with the 'pid_all' variable, which seems to think that all 34,127 rows are unique, and yet there should only be 22,011 probe ids, and they did not contain (most?) of the ids in the 'g_prune' variable?
 
@@ -1036,7 +834,7 @@ gns1 <- GeneSet(gns, geneIdType = SymbolIdentifier(), setName = "PET_pos_v_neg")
 
 Write a text file of the probe ids.
 
-```{r}
+```{r, eval = FALSE}
 write.table(as.vector(rownames(exdata)),
             file = "C:/Users/bre227/Documents/R/AD_project/Working/affy_probe_ids.txt",
             quote = F,
@@ -1046,7 +844,7 @@ write.table(as.vector(rownames(exdata)),
 
 Copy and paste text of file into g:Convert, and then read excel output.
 
-```{r}
+```{r, eval = FALSE}
 library(readxl)
 g_probes_out <- read_excel("C:/Users/bre227/Documents/R/AD_Project/Working/affy_probe_ids_gprofiler_output.xlsx",
                            col_names = F)
@@ -1129,7 +927,6 @@ rownames(probe_ids_ensembl) <- seq(1:nrow(probe_ids_ensembl))# make rownames a s
 signif_apoe4_for_PET_yes <- left_join(signif_apoe4_for_PET_yes, probe_ids_ensembl, by = "probe_ids")
 ```
 -->
-
 
 
 

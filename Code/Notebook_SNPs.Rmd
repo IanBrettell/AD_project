@@ -359,6 +359,8 @@ Write table to working folder
 write.table(gts, file = "C:/Users/bre227/Documents/R/AD_project/Working/genotype_data.txt", sep = "\t")
 ```
 
+*9 January 2018*
+
 
 
 <!--ignore below
