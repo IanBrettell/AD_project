@@ -1,0 +1,10 @@
+#	rs	chr_pos	gene_names	ensembl_gene_ids	3_prime_UTR_variant	non_coding_transcript_exon_variant	intron_variant	non_coding_transcript_variant	downstream_gene_variant
+1	rs6540433	Not found							
+2	rs11692815	Not found							
+3	rs12525076	Not found							
+4	rs75730897	Not found							
+5	rs1040310	Not found							
+6	rs61732563	Not found							
+7	rs4736312	8:142872521	ENSG00000104499, ENSG00000160882	GML,CYP11B1	1	1	1	1	3
+8	rs4823903	Not found							
+9	rs5985006	X:92580589	ENSG00000102290	PCDH11X			12		
