@@ -147,6 +147,9 @@ length(unique(SNP_genes_full$ensembl_gene_stable_id))
 SNP_genes_full$ensembl_gene_stable_id[SNP_genes_full$ensembl_gene_stable_id == ""] <- NA
 length(unique(SNP_genes_full$refsnp_id[!is.na(SNP_genes_full$ensembl_gene_stable_id)]))
 
+# write table
+write.table(SNP_genes_full, "C:/Users/bre227/Dropbox/eQTL/Data/Expanded SNP set/20171219_aibl_snp_gene_ids.txt", sep = "\t")
+
 ```
 
 
@@ -227,6 +230,10 @@ Bind both tables by ensembl_id to give full table of genes associated with the A
 ```{r}
 proxy_genes_full <- left_join(proxy_genes, ensembl_proxy_genes, by = c("ensembl_gene_stable_id" = "ensembl_gene_id"))
 dim(proxy_genes_full)
+
+# write table
+
+write.table(proxy)
 ```
 
 ## 1.5 Determine differences between genes in SNP and proxy lists
@@ -256,13 +263,13 @@ Used the g:Profiler tool (<https://biit.cs.ut.ee/gprofiler/>) to see whether it 
 Pull out those 9 SNP ids
 
 ```{r}
-setdiff(aibl_snps$SNP, SNP_genes$refsnp_id)
+setdiff(aibl_snps$SNP, SNP_genes_full$refsnp_id)
 ```
 
 Write text file
 
 ```{r}
-write.table(setdiff(aibl_snps$SNP, SNP_genes$refsnp_id), 
+write.table(setdiff(aibl_snps$SNP, SNP_genes_full$refsnp_id), 
             file = "C:/Users/bre227/Documents/R/AD_project/Working/missing_aibl_snps.txt",
             quote = F,
             col.names = F,
@@ -359,9 +366,183 @@ Write table to working folder
 write.table(gts, file = "C:/Users/bre227/Documents/R/AD_project/Working/genotype_data.txt", sep = "\t")
 ```
 
-*9 January 2018*
+*12 January 2018*
+
+## Reformat data to PED and MAP for analysis
+
+In accordance with the guide here: <http://zzz.bwh.harvard.edu/plink/data.shtml>
+
+<!--
+Import data and create map file
+```{r}
+ped <- read.table("C:/Users/bre227/Documents/R/AD_project/Working/genotype_data.txt", header = T)
+map <- data.frame(ped[, 1:4], stringsAsFactors = F)
+map <- dplyr::select(map, chromosome, snp, position)
+map$chromosome <- as.character(map$chromosome)
+map$snp <- as.character(map$snp)
+# check that there are no unexpected values
+unique(map$chromosome)
+# noticed that there is an empty row - remove from map and ped file
+map <- map[-which(is.na(map$chromosome)), ]
+ped <- ped[-which(is.na(ped$chromosome)), ]
+# replace chr "X" with "23" as required by format
+map$chromosome[map$chromosome == "X"] <- "23"
+```
+
+Find duplicated SNP entries in the PED and determine whether all the genotype data is also duplicated (in which case we can delete).
+```{r}
+length(unique(map$snp)) # only 2,088 out of 2,150 SNPs are unique?
+# get duplicated rs IDs from MAP file
+map$snp[which(duplicated(map$snp))]
+# create new data frame with genotype data from PED file matching those rs IDs
+dupe <- ped[ped$snp %in% map$snp[which(duplicated(map$snp))], ]
+
+# By visualising them, we see that an individual's entries for the duplicated SNP can be different. JD suggested to remove them all.
+
+map <- map[!map$snp %in% dupe$snp, ] # remove from map
+ped <- ped[!ped$snp %in% dupe$snp, ] # remove from ped
+```
+
+Write map file
+```{r}
+map <- data.frame(lapply(map, function(x){
+  gsub(" ", "", x)
+}), stringsAsFactors = F)
+write.table(map, "C:/Users/bre227/Documents/R/AD_project/Working/snp_data.map", row.names = F, col.names = F, quote = F, sep = "\t")
+```
+
+Reformat ped into PED format
+```{r}
+ped2 <- ped[, -c(1:4)] # remove extraneous columns
+meta <- read.table("C:/Users/bre227/Documents/R/AD_project/Working/key_metadata.txt", header = T) # read in metadata
+colnames(ped2) <- gsub("X", "", colnames(ped2)) # remove "X" from colnames
+ped2 <- data.frame(t(ped2), stringsAsFactors = F) # transpose ped2
+ped2$AIBL.Id <- rownames(ped2) # make a new column with the row names (AIBL Ids) to use to bind with metadata
+meta$AIBL.Id <- as.character(meta$AIBL.Id) # convert to characters to allow binding
+library(dplyr)
+ped2 <- left_join(ped2, meta, by = "AIBL.Id")
+ped3 <- select(ped2, AIBL.Id, Demographic.Sex, PET, everything())
+ped3[, grep("Age|apoe4", colnames(ped3), ignore.case = T)] <- NULL # remove Age and apoe4 columns
 
 
+# convert male/female to 1/2
+ped3$Demographic.Sex <- as.character(ped3$Demographic.Sex)
+ped3$Demographic.Sex[ped3$Demographic.Sex == "Male"] <- "1"
+ped3$Demographic.Sex[ped3$Demographic.Sex == "Female"] <- "2"
+
+# convert PET status from POS/NEG to 1/0
+ped3$PET <- as.character(ped3$PET)
+ped3$PET[ped3$PET == "POS"] <- "2"
+ped3$PET[ped3$PET == "NEG"] <- "1"
+ped3$PET[is.na(ped3$PET)] <- "0"
+
+# clean data
+ped4 <- data.frame(lapply(ped3, function(x){
+  gsub(" ", "", x)
+  gsub("_", " ", x)
+}), stringsAsFactors = F)
+ped4[is.na(ped4)] <- "0 0"
+
+# write file
+write.table(ped4, "C:/Users/bre227/Documents/R/AD_project/Working/snp_data.ped", row.names = F, col.names = F, quote = F, sep = "\t")
+```
+-->
+
+*15 January 2018*
+
+Tried to run PLINK, but it came up with an error in the ped file. Find out what's wrong:
+
+```{r}
+ped <- read.table("C:/Users/bre227/Documents/R/AD_project/Working/genotype_data.txt", header = T)
+
+# find unique values across genotype data
+as.character(unique(unlist(ped[, 5:ncol(ped)])))
+
+# shows that there are some with values "Homozygous Allele 2/Allele 2", II", "DI", and "DD". They must have caused the errors. Find out which rows they are in
+df <- t(apply(ped, 1, function(x) grepl("II|DI|DD|Homozygous Allele 2/Allele 2", x[5:length(x)])))
+df2 <- which(df == "TRUE", arr.ind = T)
+unique(df2[, 1]) # to get the rows (genes) that contain the above strings
+ped <- ped[-unique(df2[, 1]), ]# remove those rows
+# noticed that the row names are not re-adjusted, so we'll do that manually
+rownames(ped) <- seq(1:nrow(ped))
+```
+
+Repeat process above...
+
+Create map file
+
+```{r}
+map <- data.frame(ped[, 1:4], stringsAsFactors = F)
+map <- dplyr::select(map, chromosome, snp, position)
+map$chromosome <- as.character(map$chromosome)
+map$snp <- as.character(map$snp)
+# check that there are no unexpected values
+unique(map$chromosome)
+# noticed that there is an empty row - remove from map and ped file
+map <- map[-which(is.na(map$chromosome)), ]
+ped <- ped[-which(is.na(ped$chromosome)), ]
+# replace chr "X" with "23" as required by format
+map$chromosome[map$chromosome == "X"] <- "23"
+unique(map$chromosome)
+```
+
+Find duplicated SNP entries in the PED and determine whether all the genotype data is also duplicated (in which case we can delete).
+```{r}
+length(unique(map$snp)) # now only 2,085 out of 2,150 SNPs are unique
+# get duplicated rs IDs from MAP file
+map$snp[which(duplicated(map$snp))]
+# create new data frame with genotype data from PED file matching those rs IDs
+dupe <- ped[ped$snp %in% map$snp[which(duplicated(map$snp))], ]
+
+# By visualising them, we see that an individual's entries for the duplicated SNP can be different. JD suggested to remove them all.
+
+map <- map[!map$snp %in% dupe$snp, ] # remove from map
+ped <- ped[!ped$snp %in% dupe$snp, ] # remove from ped
+```
+
+Write map file
+```{r}
+map <- data.frame(lapply(map, function(x){
+  gsub(" ", "", x)
+}), stringsAsFactors = F)
+write.table(map, "C:/Users/bre227/Documents/R/AD_project/Working/snp_data.map", row.names = F, col.names = F, quote = F, sep = "\t")
+```
+
+Reformat ped into PED format
+```{r}
+ped2 <- ped[, -c(1:4)] # remove extraneous columns
+meta <- read.table("C:/Users/bre227/Documents/R/AD_project/Working/key_metadata.txt", header = T) # read in metadata
+colnames(ped2) <- gsub("X", "", colnames(ped2)) # remove "X" from colnames
+ped2 <- data.frame(t(ped2), stringsAsFactors = F) # transpose ped2
+ped2$AIBL.Id <- rownames(ped2) # make a new column with the row names (AIBL Ids) to use to bind with metadata
+meta$AIBL.Id <- as.character(meta$AIBL.Id) # convert to characters to allow binding
+library(dplyr)
+ped2 <- left_join(ped2, meta, by = "AIBL.Id")
+ped3 <- select(ped2, AIBL.Id, Demographic.Sex, PET, everything())
+ped3[, grep("Age|apoe4", colnames(ped3), ignore.case = T)] <- NULL # remove Age and apoe4 columns
+
+
+# convert male/female to 1/2
+ped3$Demographic.Sex <- as.character(ped3$Demographic.Sex)
+ped3$Demographic.Sex[ped3$Demographic.Sex == "Male"] <- "1"
+ped3$Demographic.Sex[ped3$Demographic.Sex == "Female"] <- "2"
+
+# convert PET status from POS/NEG to 1/0
+ped3$PET <- as.character(ped3$PET)
+ped3$PET[ped3$PET == "POS"] <- "2"
+ped3$PET[ped3$PET == "NEG"] <- "1"
+ped3$PET[is.na(ped3$PET)] <- "0"
+
+# clean data
+ped4 <- data.frame(lapply(ped3, function(x){
+  gsub(" ", "", x)
+  gsub("_", " ", x)
+}), stringsAsFactors = F)
+ped4[is.na(ped4)] <- "0 0"
+
+# write file
+write.table(ped4, "C:/Users/bre227/Documents/R/AD_project/Working/snp_data.ped", row.names = F, col.names = F, quote = F, sep = "\t")
+```
 
 <!--ignore below
 
