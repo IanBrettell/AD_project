@@ -618,6 +618,9 @@ sig_pk <- dplyr::select(sig_pk, -ensembl_id.y, -gene_symbol) %>%
 # add NAs to hgnc_symbol column
 sig_pk$hgnc_symbol[sig_pk$hgnc_symbol == ""] <- NA
 sig_pk$hgnc_symbol <- as.character(sig_pk$hgnc_symbol)
+
+# how many genes?
+length(unique(sig_pk$ensembl_id))
 ```
 
 *16 January 2018*
@@ -664,7 +667,40 @@ ols2 <- data.frame(ols1)
 ```
 -->
 
-Permutations (10k). Alternate / full model association tests. Logistic models with covariates: age, gender, apoe4.
+*17 January 2018*
+
+**JD**: Run permutations (10k). Alternate / full model association tests. Logistic models with covariates: age, gender, apoe4.
+
+Obtain reference allele from BioMart query, in accordance with: <http://zzz.bwh.harvard.edu/plink/dataman.shtml#refallele> 
+```{r}
+# read in table
+snp_gns <- read.delim("C:/Users/bre227/Documents/R/AD_project/Working/aibl_snp_genes.txt", header = T)
+ref_al <- subset(snp_gns, select = c("refsnp_id", "allele_1"))
+write.table(ref_al, "C:/Users/bre227/Documents/R/AD_project/Working/ref_alleles.txt", row.names = F, col.names = F, quote = F, sep = "\t")
+```
+
+Write covariate file, in accordance with: <http://zzz.bwh.harvard.edu/plink/data.shtml#covar>
+```{r}
+cov <- ped2[,(ncol(ped2) - 5 + 1):ncol(ped2)] # to obtain metadata bound to aibl IDs for which we have genotype data
+cov$Demographic.Sex <- as.character(cov$Demographic.Sex)
+cov$Demographic.Sex[cov$Demographic.Sex == "Male"] <- "1"
+cov$Demographic.Sex[cov$Demographic.Sex == "Female"] <- "2"
+colnames(cov)[colnames(cov) == "Demographic.Sex"] <- "Sex"
+cov$PET <- NULL # because it's already in the PED file
+cov$FID <- cov$AIBL.Id # to make a family ID column - see <http://zzz.bwh.harvard.edu/plink/data.shtml#ped>
+cov <- dplyr::select(cov, FID, IID = "AIBL.Id", everything())
+write.table(cov, "C:/Users/bre227/Documents/R/AD_project/Working/cov.txt", row.names = F, col.names = T, quote = F, sep = "\t")
+```
+
+Tried to run `./plink --file snp_data --logistic --genotypic --beta --reference-allele ref_alleles.txt --covar.txt` but it returned the error message: "No file [snp_data.fam] exists."
+
+So we created a .fam file using `./plink --file snp_data --out snp_data --make-bed --map3 --no-fid --no-parents` and tried again.
+
+Output file created (then renamed) as: 'plink.assoc.logistic.genotype'.
+
+Then ran again without the genotype query: `./plink --file snp_data --logistic --beta --reference-allele ref_alleles.txt --covar.txt`
+
+Import those files
 
 ```{r}
 
