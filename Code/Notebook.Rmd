@@ -19,14 +19,19 @@ install.packages("reshape2")
 install.packages("viridis")
 biocLite("made4")
 install.packages("caret")
+install.packages('e1071', dependencies=TRUE)
 install.packages("ggfortify")
+install.packages("cluster")
+install.packages("factoextra")
+biocLite("Biobase")
+biocLite("limma")
 
 # Note: Installing bioconductor created issues with creating the markdown preview, which appears to be fixed by installing the `yaml`, `backports` and `reshape2` packages afterwards.
 ```
 
 ***
 
-### 1. Exploratory analysis of mRNA expression data
+## 1. Exploratory analysis of mRNA expression data
 
 *7 December 2017*
 
@@ -41,16 +46,16 @@ metadata <- read.delim(here("Data", "Expression", "aibl-ids-6.0.0-201712010300.t
 dim(metadata)
 head(metadata)
 ids <- read.delim(here("Data", "Expression", "AIBL_Gene_Expression_IDs.txt"), header = F)
-head(ids)
+dim(ids)
 ```
 
 
 ***
-##### 1.1. Tidy and combine data
+### 1.1. Tidy and combine data
 
 Load packages
 
-```{r}
+```{r, results = "hide"}
 library(tidyverse)
 library(rafalib)
 library(dummies)
@@ -59,9 +64,9 @@ library(dummies)
 Remove 'X' from columns in 'exdata'
 
 ```{r}
-excols <- colnames(exdata)
-excols <- gsub("X", "", excols)
-colnames(exdata) <- excols
+excols <- colnames(exdata) # create vector of sample ids using exdata
+excols <- gsub("X", "", excols) # remove the 'X' prefix from sample ids
+colnames(exdata) <- excols # replace exdata colnames
 head(excols)
 ```
 
@@ -70,11 +75,20 @@ Add age column and apoe4 columns
 ```{r}
 metadata$Age <- as.numeric((as.Date(metadata$Progress.Summary.Date.of.NP.assessment,format=c("%d/%m/%Y")))-(as.Date(paste("15",substr(metadata$Demographic.YearMonthOfBirth,start=5,stop=6),substr(metadata$Demographic.YearMonthOfBirth,start=1,stop=4),sep="/"),format = c("%d/%m/%Y"))))/365.25
 summary(metadata$Age)
+```
+
+```{r}
 #The minimum is -0.0027? To find this observation:
 which(metadata$Age < 40)
-# So there is only one individual with an age less than 40. The mistake was due to an error in the  collection of their date of birth data.
+```
+
+So there is only one individual with an age less than 40. The mistake was due to an error in the  collection of their date of birth data.
+```{r}
 metadata[6727, ]$Demographic.YearMonthOfBirth
-# Excluding them:
+```
+
+Excluding them:
+```{r}
 hist(metadata[-6727, ]$Age)
 ```
 
@@ -132,15 +146,23 @@ excols <- colnames(test.dat) # assign column names to vector
 excols <- gsub("X", "", excols) # remove the X prefixes
 colnames(test.dat) <- excols # replace the column names 
 
+exrows <- rownames(test.dat)
+exrows <- gsub("X", "", exrows)
+rownames(test.dat) <- exrows
 test.dat$AIBL.Id <- as.integer(rownames(test.dat))
 test.dat <- left_join(meta1, test.dat, by = "AIBL.Id") %>% 
   na.omit # exclude rows with NAs
 summary(test.dat[,3:4]) # get counts for PET and apoe4
+# check that we are left with the right amount of observations
+length(which(!is.na(meta1$PET) & !is.na(meta1$apoe4), arr.ind = T))
+
 ```
 
 ***
 
-#### Meeting with JD 20171213
+#### Meeting with JD
+
+*13 December 2017*
 
 *Use the `limma` package to make volcano plots, for both "PET status" (yes or no) and APOE4 (yes or no)
 
@@ -150,11 +172,11 @@ summary(test.dat[,3:4]) # get counts for PET and apoe4
 
 *Then go back and find the values for those genes - is there a reltaionship or not. 
 
-### 1.2. Create initial exploratory plot testing for just one gene.
+### 1.2. Create initial exploratory plots
 
 ***
 
-Gather count column
+Gather expression columns into a `count` column.
 ```{r}
 consol_test <- test.dat %>% 
   gather(-c(AIBL.Id, Demographic.Sex, PET, apoe4, Age), key = gene, value = count)
@@ -167,6 +189,7 @@ ggplot(consol_test, aes(x = gene, y = count)) +
   geom_point(aes(colour = PET)) +
   viridis::scale_colour_viridis(option = "viridis", discrete = T)
 ```
+The scatterplot is not very informative, so we'll try a boxplot.
 
 ```{r}
 ggplot(consol_test, aes(x = gene, y = count)) +
@@ -184,26 +207,148 @@ ggplot(consol_test, aes(count)) +
 ggplot(consol_test, aes(count)) +
   geom_freqpoly(aes(colour = apoe4))
 ```
+This is perhaps interesting - the samples with no apoe4 gene show higher expression levels.
 
 Following this <https://www.r-bloggers.com/computing-and-visualizing-pca-in-r/>.
 
 Also used this for the plot <https://cran.r-project.org/web/packages/ggfortify/vignettes/plot_pca.html>
 
-```{r}
-logger <- test.dat[,6:105]
-logger <- log(logger)
-logger$AIBL.Id <- test.dat$AIBL.Id
-logger <- left_join(logger, test.dat[,1:5], by = "AIBL.Id")
+```{r, results = "hide"}
+logger <- test.dat[,6:105] # extract expression measurements
+logger <- log(logger) # log transform them
+logger$AIBL.Id <- test.dat$AIBL.Id # add the AIBL.Id
+logger <- left_join(logger, test.dat[,1:5], by = "AIBL.Id") # rejoin metadata
 
 test.pca <- prcomp(logger[1:100], center = T, scale. = T)
 plot(test.pca)
+```
 
-summary(test.pca)
-
+```{r}
 library(ggfortify)
 autoplot(test.pca, data = logger, colour = "PET") +
   viridis::scale_colour_viridis(option = "viridis", discrete = T)
 ```
+
+***
+
+*18 December 2017*
+
+Plot for whole dataset
+```{r}
+exdata1 <- as_tibble(exdata)
+exdata1 <- as_tibble(t(exdata1)) # transpose to put samples in rows, genes in columns
+colnames(exdata1) <- rownames(exdata) # add genes names
+exdata1$AIBL.Id <- as.integer(colnames(exdata)) # add 'AIBL.Id' column
+exdata2 <- left_join(meta1, exdata1, by = "AIBL.Id") %>% 
+  na.omit # add metadata and remove PET and apoe4 columns with 'NA'
+rownames(exdata2) <- exdata2$AIBL.Id # to ensure the labels in the plots reflect the AIBL.Ids
+
+# run PCA
+pca <- prcomp(exdata2[6:22016], center = T, scale. = T) # run PCA
+```
+
+```{r}
+plot(pca, type = "l")
+```
+
+Another, better version of the scree plot using the package `factoextra`.
+```{r}
+library(factoextra)
+fviz_eig(pca)
+```
+
+
+
+
+```{r}
+library(ggfortify)
+autoplot(pca, data = exdata2, colour = "PET", label = T) +
+  viridis::scale_colour_viridis(option = "viridis", discrete = T)
+```
+
+```{r}
+library(ggfortify)
+autoplot(pca, data = exdata2, colour = "apoe4", label = T)
+```
+*Consider excluding outlier individuals with AIBL.Ids 72 and 108.*
+
+```{r}
+qqnorm(pca$x[,2], pch = 20)
+```
+
+
+
+First, following the tutorial here: <http://bcb.dfci.harvard.edu/~aedin/courses/BiocDec2011/>, we will use the `made4` package
+
+```{r, results = "hide"}
+library(made4)
+```
+
+```{r}
+overview(exdata, labels = substring(colnames(exdata), 1, 5))
+```
+
+Following the tutorial here:
+<http://www.sthda.com/english/articles/31-principal-component-methods-in-r-practical-guide/118-principal-component-analysis-in-r-prcomp-vs-princomp/>, we tried using `princomp()` instead, as that uses 'spectral decomposition', which examines the covariances / correlations between variables (whereas `prcomp()` does so between individuals). However that failed, because it requires more observations than variables.
+
+***
+
+### 1.3. Use `limma` to analyse expression data.
+
+We first create an 'ExpressionSet' with genes on rows, and samples on columns, following the guide here: <https://www.bioconductor.org/packages/3.7/bioc/vignettes/Biobase/inst/doc/ExpressionSetIntroduction.pdf>
+
+```{r, results = "hide"}
+library(Biobase)
+```
+```{r}
+exprs <- as.matrix(t(exdata2[,6:22016])) # leaving behind the first 5 metadata columns
+minimalSet <- ExpressionSet(assayData = exprs)
+pData <- exdata2[,1:5]
+summary(pData)
+```
+
+```{r, results = "hide"}
+library(limma)
+```
+```{r}
+PET_apoe4 <- paste(pData$PET, pData$apoe4, sep = ".") # put PET/apoe4 combinations into a vector
+PET_apoe4
+
+PET_apoe4 <- factor(PET_apoe4, levels = c(unique(PET_apoe4))) # turn it into a factor
+design <- model.matrix(~0 + PET_apoe4) # create factor table for four combinations
+colnames(design) <- levels(PET_apoe4)
+fit <- lmFit(exprs, design)
+```
+
+Set four pair-wise contrasts of interest and compute the contrasts and moderated t-tests.
+
+```{r}
+cont.matrix <- makeContrasts(apoe4_for_PET_yes = POS.1 - POS.0,
+                             apoe4_for_PET_no = NEG.1 - NEG.0,
+                             PET_for_apoe4_yes = POS.1 - NEG.1,
+                             PET_for_apoe4_no = POS.0 - NEG.0,
+                             levels = design)
+fit2 <- contrasts.fit(fit, cont.matrix)
+fit2 <- eBayes(fit2)
+```
+
+Get the genes differentially expressed in each comparison
+
+```{r}
+topTable(fit2, coef = "apoe4_for_PET_yes")
+topTable(fit2, coef = "apoe4_for_PET_no")
+topTable(fit2, coef = "PET_for_apoe4_yes")
+topTable(fit2, coef = "PET_for_apoe4_no")
+```
+
+
+```{r}
+library(cluster)
+clara.dat <- test.dat[,6:105]
+cl.test <- clara(clara.dat, 2)
+autoplot(cluster::clara(clara.dat, 2))
+```
+
 
 ```{r}
 library(caret)
@@ -218,12 +363,7 @@ trans <- preProcess(logger[,1:100],
 
 *15 December 2017*
 
-First, following the tutorial here: <http://bcb.dfci.harvard.edu/~aedin/courses/BiocDec2011/>, we will use the `made4` package
 
-```{r}
-library(limma)
-
-```
 
 
 ```{r}
@@ -296,6 +436,5 @@ plot(cumsum(prop_varex), xlab = "Principal Component",
      ylab = "Cumulative Proportion of Variance Explained",
      type = "b")
 ***
-
 
 

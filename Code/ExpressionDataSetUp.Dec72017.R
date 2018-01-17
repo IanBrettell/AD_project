@@ -34,7 +34,7 @@ ids1$Tracer <- ifelse(ids1$Image.PET.Amyloid.PIB_NAV.Status!="","PiB",ifelse(ids
 
 
 ### Bring in expression data ###
-exp <- read.delim("~/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression_UpdtdDec2017.txt",sep="")
+exp <- read.delim("C:/Users/bre227/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression_UpdtdDec2017.txt",sep="")
 e1 <- t(exp[1:100,])
 id.numbers <- gsub("X","",rownames(e1))
 		

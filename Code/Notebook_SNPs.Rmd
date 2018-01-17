@@ -1,7 +1,9 @@
 ---
 title: "R Notebook - SNP data"
-author: Ian Brettell
-output: html_notebook
+author: "Ian Brettell"
+output:
+  html_document:
+    df_print: paged
 ---
 
 *8 December 2017*
@@ -26,6 +28,7 @@ biocLite("stephenturner/annotables")
 library(annotables)
 biocLite("ensemblVEP")
 library(ensemblVEP)
+biocLite("snpStats")
 ```
 
 
@@ -84,7 +87,7 @@ mart_snps <- useMart('ENSEMBL_MART_SNP', 'hsapiens_snp')
 ```
 
 ```{r}
-SNP_genes <- getBM(attributes = c("refsnp_id", "chr_name", "chrom_start", "chrom_end", "ensembl_gene_stable_id"),
+SNP_genes <- getBM(attributes = c("refsnp_id", "allele_1", "minor_allele", "minor_allele_freq", "chr_name", "chrom_start", "chrom_end", "ensembl_gene_stable_id"),
                      filters = "snp_filter",
                      values = snps,
                      mart = mart_snps)
@@ -111,7 +114,7 @@ mart_genes <- useMart('ENSEMBL_MART_ENSEMBL', 'hsapiens_gene_ensembl')
 ```
 
 ```{r}
-ensembl_genes <- getBM(attributes = c("ensembl_gene_id", "chromosome_name", "start_position", "end_position", "strand", "hgnc_symbol"),
+ensembl_genes <- getBM(attributes = c("ensembl_gene_id", "chromosome_name", "start_position", "end_position", "strand", "hgnc_symbol", "entrezgene"),
                        filters = "ensembl_gene_id",
                        values = ensembl_ids,
                        mart = mart_genes)
@@ -148,7 +151,7 @@ SNP_genes_full$ensembl_gene_stable_id[SNP_genes_full$ensembl_gene_stable_id == "
 length(unique(SNP_genes_full$refsnp_id[!is.na(SNP_genes_full$ensembl_gene_stable_id)]))
 
 # write table
-write.table(SNP_genes_full, "C:/Users/bre227/Dropbox/eQTL/Data/Expanded SNP set/20171219_aibl_snp_gene_ids.txt", sep = "\t")
+write.table(SNP_genes_full, "C:/Users/bre227/Documents/R/AD_project/Working/aibl_snp_genes.txt", sep = "\t", col.names = T, row.names = F, quote = F)
 
 ```
 
@@ -465,6 +468,16 @@ unique(df2[, 1]) # to get the rows (genes) that contain the above strings
 ped <- ped[-unique(df2[, 1]), ]# remove those rows
 # noticed that the row names are not re-adjusted, so we'll do that manually
 rownames(ped) <- seq(1:nrow(ped))
+
+# PLINK revealed another error - AIBL.Id 284 has a third allele for rs2247856 - convert to NA
+a <- grep("rs2247856", ped$snp)
+b <- grep("X284", colnames(ped))
+ped[a, b] <- NA
+
+# After trying to run it again, PLINK revealed a further error - we need to find which rows (SNPs) have all NA and remove
+na_gns <- apply(ped[, 5:ncol(ped)], 1, function(x) length(which(is.na(x) == T)) == length(5:ncol(ped)))
+length(which(na_gns == T)) # shows that 40 SNPs have no data
+ped <- ped[-which(na_gns == T), ] # remove
 ```
 
 Repeat process above...
@@ -518,7 +531,7 @@ ped2$AIBL.Id <- rownames(ped2) # make a new column with the row names (AIBL Ids)
 meta$AIBL.Id <- as.character(meta$AIBL.Id) # convert to characters to allow binding
 library(dplyr)
 ped2 <- left_join(ped2, meta, by = "AIBL.Id")
-ped3 <- select(ped2, AIBL.Id, Demographic.Sex, PET, everything())
+ped3 <- dplyr::select(ped2, AIBL.Id, Demographic.Sex, PET, everything())
 ped3[, grep("Age|apoe4", colnames(ped3), ignore.case = T)] <- NULL # remove Age and apoe4 columns
 
 
@@ -543,6 +556,120 @@ ped4[is.na(ped4)] <- "0 0"
 # write file
 write.table(ped4, "C:/Users/bre227/Documents/R/AD_project/Working/snp_data.ped", row.names = F, col.names = F, quote = F, sep = "\t")
 ```
+
+I fed the files to PLINK using the following code: `./plink --file snp_data --map3 --noweb --no-fid --no-parents --assoc` and `./plink --file snp_data --map3 --noweb --no-fid --no-parents --fisher`, which created the output files 'plink.assoc' and 'plink.assoc.fisher'. 
+
+Take a look at the files.
+
+```{r}
+pk_ass <- read.table("C:/Users/bre227/Documents/R/AD_project/Working/plink.assoc", na.strings = NA, header = T)
+pk_fsh <- read.table("C:/Users/bre227/Documents/R/AD_project/Working/plink.assoc.fisher", na.strings = NA, header = T)
+
+length(which(pk_ass$P < 0.05))
+length(which(pk_fsh$P < 0.05))
+```
+
+Shows that the Fisher exact test output had fewer significant SNPs, so we'll prefer that output.
+
+```{r}
+#create table of significant SNPs
+sig_pk <- pk_fsh[(pk_fsh$P < 0.05) == T, ]
+# merge with gene ids from 'aible_snp_genes.txt' file
+snp_gns <- read.delim("C:/Users/bre227/Documents/R/AD_project/Working/aibl_snp_genes.txt", sep = "\t", header = T)
+library(dplyr)
+sig_pk <- left_join(sig_pk, snp_gns, by = c("SNP" = "refsnp_id"))
+
+# how many unique genes?
+length(unique(sig_pk$hgnc_symbol))
+length(unique(sig_pk$ensembl_gene_stable_id))
+length(unique(sig_pk$entrezgene))
+
+# order by P value
+sig_pk <- sig_pk[order(sig_pk$P), ]
+
+# rename and reorder columns
+sig_pk <- dplyr::select(sig_pk, 
+                 SNP, 
+                 minor_allele = "A1", 
+                 freq_in_cases = "F_A", 
+                 freq_in_controls = "F_U", 
+                 major_allele = "A2", 
+                 p_value = "P", 
+                 odds_ratio_minor_allele = "OR", 
+                 chr = "chr_name", 
+                 snp_locus = "chrom_start", 
+                 gene_start = "start_position", 
+                 gene_end = "end_position", 
+                 strand, ensembl_id = "ensembl_gene_stable_id", 
+                 hgnc_symbol, entrez_id = "entrezgene")
+
+# write table
+write.table(sig_pk, "C:/Users/bre227/Documents/R/AD_project/Working/sig_PET_pos_v_neg_alleles_annotated.txt", col.names = T, row.names = F, quote = F, sep = "\t")
+```
+
+Combine data with probe id (by entrez id, which is the most annotated of gene ids)
+```{r}
+probes <- read.delim("C:/Users/bre227/Documents/R/AD_project/Working/affy_probes_annotated.txt", header = T, sep = "\t")
+sig_pk <- left_join(sig_pk, probes, by = "entrez_id")
+# remove second ensembl id and gene symbol columns (they have no additional information)
+sig_pk <- dplyr::select(sig_pk, -ensembl_id.y, -gene_symbol) %>% 
+  rename(ensembl_id.x = "ensembl_id")
+
+# add NAs to hgnc_symbol column
+sig_pk$hgnc_symbol[sig_pk$hgnc_symbol == ""] <- NA
+sig_pk$hgnc_symbol <- as.character(sig_pk$hgnc_symbol)
+```
+
+*16 January 2018*
+
+<!--
+See if we can get more annotation information by using the locations of the SNPs to get the gene names, rather than the ensembl IDs.
+
+```{r}
+library(GenomicRanges)
+# include "chr" prefix before each chromosome name
+cnv <- SNP_genes
+cnv$chr_name <- paste("chr", cnv$chr_name, sep = "")
+
+# make GRanges object for SNPs
+cnv1 <- makeGRangesFromDataFrame(cnv,
+                                keep.extra.columns = F,
+                                seqnames.field = "chr_name",
+                                start.field = "chrom_start",
+                                end.field = "chrom_end")
+
+# create function to match overlaps
+#splitColumnByOverlap <- function(query, subject, column = "ENTREZID", ...){
+#    olaps <- findOverlaps(query, subject, ...)
+#    f1 <- factor(subjectHits(olaps),
+#                 levels=seq_len(subjectLength(olaps)))
+#    splitAsList(mcols(query)[[column]][queryHits(olaps)], f1)
+#}
+
+# load library
+library(Homo.sapiens)
+gns <- genes(Homo.sapiens, columns = c("ENTREZID", "SYMBOL", "ENSEMBL"))
+head(gns)
+
+# run function
+ols <- findOverlaps(gns, cnv1, select = "all")
+ols
+unique(queryHits(ols)) # only returns hits for 227 SNPs??
+
+ols1 <- subsetByOverlaps(gns, cnv1)
+ols1 # confirmed?
+
+ols2 <- data.frame(ols1)
+
+```
+-->
+
+Permutations (10k). Alternate / full model association tests. Logistic models with covariates: age, gender, apoe4.
+
+```{r}
+
+```
+
 
 <!--ignore below
 

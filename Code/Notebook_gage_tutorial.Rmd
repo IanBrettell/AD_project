@@ -1,0 +1,52 @@
+---
+title: "GAGE tutorial"
+output: html_notebook
+---
+
+## 5. Installation
+
+```{r setup, eval = FALSE}
+source("http://bioconductor.org/biocLite.R")
+biocLite(c("gage","gageData"))
+```
+
+## 6. Get started
+
+```{r}
+library(gage)
+library(help = gage)
+```
+
+## 7. Basic analysis
+
+```{r}
+data("gse16873")
+cn <- colnames(gse16873)
+hn <- grep('HN', cn, ignore.case = T)
+adh <- grep('ADH', cn, ignore.case = T)
+dcis <- grep('DCIS', cn, ignore.case = T)
+print(hn)
+print(dcis)
+```
+
+Check to make sure your gene sets and expression data are using the same ID system (Entrez, symbol, probe ID, etc)
+
+```{r}
+data("kegg.gs")
+data("go.gs")
+lapply(kegg.gs[1:3], head)
+```
+
+```{r}
+head(rownames(gse16873))
+```
+
+
+
+
+
+
+
+
+
+

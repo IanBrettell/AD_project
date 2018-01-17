@@ -109,6 +109,7 @@ meta2 <- dplyr::select(metadata2,
                 PET,
                 apoe4,
                 Age)
+write.table(meta2, "C:/Users/bre227/Documents/R/AD_project/Working/key_metadata.txt", col.names = T, row.names = F, quote = F)
 ```
 
 
@@ -442,6 +443,7 @@ pid_all <- left_join(pid_symb, pid_ent, by = "probe_id") %>%
          xx3.1 = "ensembl_id") %>% 
   dplyr::select(probe_id, everything())
 
+write.table(pid_all, "C:/Users/bre227/Documents/R/AD_project/Working/affy_probes_annotated.txt", row.names = F, col.names = T, quote = F, sep = "\t")
 ```
 
 Combine lists of significant genes for each contrast. Note that combined counts of significant genes for all four contrasts is 3030.
@@ -758,6 +760,7 @@ kegids <- sapply(g, function(x){
 save(kegids, file = "C:/Users/bre227/Documents/R/AD_project/Working/kegids.RData")
 ```
 
+<!-- ### THIS BLOCK OF CODE WAS WRITTEN BETWEEN 20180109 - 20180111. IT WASN'T COMPLETED, AS MICHAEL VACHER NOTICED THAT THE HSA IDS FOR KEGG (WHICH WE WERE TRYING TO PULL OUT) WERE SIMPLY THE ENTREZ IDS WITH An "HSA:" PREFIX. MV WILL NOW WORK ON THE NETWORKS, AND I WILL MOVE ONTO THE SNP DATA. -IB, 20180111
 ```{r obtain specific hsa matches for each gene symbol}
 # create a table of genes and the number of hsa id hits
 t <- lapply(kegids, length)
@@ -779,52 +782,487 @@ h <- left_join(t, g, by = "gene")# join with table
 colnames(h)[3] <- "hsa_id"
   
 
-names(kegids$COA5[grep("\\bCOA5\\b", kegids$COA5)])
-
-
-
-j <- lapply(kegids, function(x){ # pull hsa ids for genes that have an exact match
-  if (length(x) > 1 && length(names(x)[grep(paste("\\b", x, "\\b", sep = ""), x)]) == 1){
-    print(names(x))
-  }
-})
-
-lapply(kegids, function(x){
-  length(names(x[grep(paste("\\b", x, "\\b", sep = ""), x)])) > 1
-})
-
-k <- data.frame(unlist(j))# convert into data frame
-k$gene <- rownames(k)
-colnames(k)[1] <- "hsa_id"
-l <- merge(h, k, by = "gene", all.x = T, sort = F)
-
+## Test to pull out those with exact matches
+#create test list
 i <- kegids[c(1,2,5)]
-paste("\\b", "COA5", "\\b", sep = "")
+
+# test to pull out the names
+names(kegids$COA5[grep("\\bCOA5\\b", kegids$COA5)])
+names(kegids$GATA2[grep("\\bGATA2\\b", kegids$GATA2)])
+names(kegids$C21orf2[grep("\\bC21orf2\\b", kegids$C21orf2)])
+
+# test to pull out the number of names with exact matches
 length(names(kegids$COA5[grep("\\bCOA5\\b", kegids$COA5)]))
 length(names(kegids$GATA2[grep("\\bGATA2\\b", kegids$GATA2)]))
 length(names(kegids$C21orf2[grep("\\bC21orf2\\b", kegids$C21orf2)]))
 
-lapply(i, function(x){
-  length(names(x[grep(paste("\\b", x, "\\b", sep = ""), x)])) == 1
+## build script
+grep("\\bCOA5\\b", kegids$COA5)
+kegids$COA5[grep("\\bCOA5\\b", kegids$COA5)]
+names(kegids$COA5[grep("\\bCOA5\\b", kegids$COA5)])
+length(names(kegids$COA5[grep("\\bCOA5\\b", kegids$COA5)]))
+
+paste("\\b", "COA5", "\\b", sep = "") # works
+
+lapply(i, function(x){ # pastes each element
+  paste("\\b", x, "\\b", sep = "")
 })
 
-lapply(i, function())
+lapply(names(i), function(x){ # pastes just the name
+  paste("\\b", x, "\\b", sep = "")
+})
 
-## test
+# try creating a vector of the pasted names and use that to match
 
-m <- kegids[1]
-lapply(m, function(x){
-  if ((length(x) > 1) && (length(names(x[grep(paste("\\b", x, "\\b", sep = ""), x)])) == 1)){
-    print(names(x[grep(paste("\\b", x, "\\b", sep = ""), x)]))
+n <- sapply(names(kegids), function(x){ # creates character vector. Need to remove quotes and replace with |
+  print(paste("\\b", x, "\\b", sep = ""), quote = F)
+})
+
+n <- paste(c(n), collapse = "|") # to create one-character vector separated by "|"
+
+# test with COA5
+kegids$COA5 # prints both entries
+kegids$COA5[grep(n, kegids$COA5)] # prints only the one of interest
+
+# again, with GATA2
+kegids$GATA2
+kegids$GATA2[grep(n, kegids$GATA2)] # prints both entries (as expected)
+
+# again, with C21orf2
+kegids$C21orf2 # prints all 8 entries
+kegids$C21orf2[grep(n, kegids$C21orf2)] # prints only the one of interest
+
+# check whether it prints the right lengths
+lapply(i, function(x){
+  length(names(x[grep(n, x)]))
+})
+
+# check whether it returns logical results
+lapply(i, function(x){
+  length(names(x[grep(n, x)])) == 1
+})
+
+# try to get it to print those that satisfy the condition
+
+lapply(i, function(x){
+  if (length(names(x[grep(n, x)])) == 1){
+    print(names(x[grep(n, x)]))
   }
 })
 
-
-
-lapply(m, function(x){
-  print(names(x[grep(paste("\\b", x, "\\b", sep = ""), x)]))
+# run over whole set
+o <- lapply(kegids, function(x){
+  if (length(names(x[grep(n, x)])) == 1){
+    print(names(x[grep(n, x)]))
+  }
 })
+
+# convert to data frame
+p <- data.frame(unlist(o))
+p$gene <- rownames(p)
+
+# join to data frame
+q <- dplyr::left_join(h, p, by = "gene")
+
+length(which(!is.na(q$hsa_id)))
+length(which(!is.na(q$unlist.o)))
+
+# to test there are no values in $hsa_id that are not in $unlist.o.
+which(is.na(q$unlist.o.) & !is.na(q$hsa_id))
+
 ```
+
+so there are still 89 with multiple hsa_id hits, even with exact matching. What is going on there?
+
+e.g. GATA2 picks up GATA2-AS1. Also, [18] PAG1 should only have one hit! When using the collapsed name vector 'n', you get two hits, but when using "\\bPAG1\\b" you get just one. This must be because there is another gene in 'n' that is getting a hit in the PAG1 entry. 
+
+```{r}
+names(kegids$PAG1)[grep(n, kegids$PAG1)]
+names(kegids$PAG1)[grep("\\bPAG1\\b", kegids$PAG1)]
+
+```
+
+Following this: <https://stackoverflow.com/questions/29223862/r-regex-grep-excluding-hyphen-dash-as-boundary>, we'll try using a different boundary.
+
+```{r}
+r <- sapply(names(kegids), function(x){ # creates character vector. Need to remove quotes and replace with |
+  print(paste("\\b", x, "(?=$|,)", sep = ""), quote = F)
+})
+
+r <- paste(c(r), collapse = "|")
+
+s <- lapply(kegids, function(x){
+  if (length(names(x[grep(r, x)])) == 1){
+    print(names(x[grep(r, x)]))
+  }
+})
+
+t <- data.frame(unlist(s))
+t$gene <- rownames(t)
+q <- left_join(q, t, by = "gene")
+
+which(is.na(q$unlist.o.) & !is.na(q$unlist.s.))
+
+```
+
+Ok, so we got two more hits. This just isn't satisfactory. Let's try converting each entry into a data frame, and then grepping it for the hit.
+
+```{r}
+for (x in names(i)){
+  y <- print(x)
+  paste("\\b", get(y), "\\b")
+}
+
+df1 <- data.frame(x=c(1:5),y=c(11:15))
+df2 <- data.frame(x=c(1:5),y=c(11:15))
+mylist <- list(df1=df1,df2=df2)
+
+mylist1 <- lapply(seq_along(mylist), 
+        function(i, x){
+            x[[i]]$id <- i
+            return (x[[i]])
+        }, mylist
+)
+
+mylist2 <- lapply(names(mylist), 
+    function(n, x){
+        x[[n]]$id <- n
+        return (x[[n]])
+    }, mylist
+)
+
+
+# Create additional variable inside each element with index name
+ii <- lapply(names(i),
+             function(n, x){
+               x[[n]]$id <- n
+               return (x[[n]])
+             }, i
+             )
+
+names(ii[[1]])[grep(paste("\\b", ii[[1]]$id, "\\b", sep = ""), ii[[1]])]
+names(ii[[2]])[grep(paste("\\b", ii[[2]]$id, "\\b", sep = ""), ii[[2]])]
+names(ii[[2]])[grep(paste("\\b", ii[[2]]$id, "(?=$|,)", sep = ""), ii[[2]], perl = T)] ## this works to exclude hyphens!!
+
+# create a new vector using this new grep expression
+u <- sapply(names(kegids), function(x){
+  print(paste("\\b", x, "(?=$|,)", sep = ""), quote = F)
+})
+u <- paste(c(u), collapse = "|")
+
+# test with 'ii' - remember to add "perl = T" to the grep function, and change from 1 to 2 matches (to account for the newly created id)
+v <- lapply(ii, function(x){
+  if (length(names(x[grep(n, x, perl = T)])) == 2){
+    print(names(x[grep(n, x, perl = T)]))
+  }
+}) # doesn't work very well - didn't capture GATA2
+
+
+x <- list(a=11,b=12,c=13)
+lapply(seq_along(x), function(y, n, i) { paste(n[[i]], y[[i]]) }, y=x, n=names(x))
+
+lapply(seq_along(x), function(y, n, i){
+  paste(n[[i]], y[[i]])
+}, y = x, n = names(x))
+
+lapply(x, function(y, n, i){
+  paste(n[[i]], y[[i]])
+}, y = x, n = names(x))
+
+x <- i
+lapply(seq_along(x), function(y, n, i){
+  names(x)[grep(paste("\\b", x, "(?=$|,)", sep = ""), x, perl = T)]
+}, y = x, n = names(x)
+)
+
+
+## try again
+
+lapply(seq_along(ii), function(y, n, i){
+  paste(n[i], y[i])
+}, y = ii, n = names(ii))
+
+lapply(seq_along(ii), function(y, n, i){ # this is promising
+  grep(n[[i]], y[[i]])
+}, y = ii, n = names(ii))
+
+lapply(seq_along(ii), function(x, n, i){ # this is promising
+  names(x[[i]])[grep(paste("\\b", n[[i]], "(?=$|,)", sep = ""), x, perl = T)]
+}, x = ii, n = names(ii))
+
+names(ii$COA5)[grep(paste("\\b", "COA5", "(?=$|,)", sep = ""), ii, perl = T)]
+names(ii$GATA2)[grep(paste("\\b", "GATA2", "(?=$|,)", sep = ""), ii, perl = T)]
+names(ii$C21orf2)[grep(paste("\\b", "C21orf2", "(?=$|,)", sep = ""), ii$C21orf2, perl = T)] # this works if you specify the index. Let's try the above again, adjusting that.
+
+lapply(seq_along(ii), function(x, n, i){
+  names(x[[i]])[grep(paste("\\b", n[[i]], "(?=$|,)", sep = ""), x[[i]], perl = T)]
+}, x = ii, n = names(ii)) ### THIS IS IT!!!
+
+
+```
+Let's try it on the whole set
+```{r}
+
+w <- lapply(seq_along(kegids), function(x, n, i){
+  if (length(names(x[[i]])[grep(paste("\\b", n[[i]], "(?=$|,)", sep = ""), x[[i]], perl = T)]) == 1){
+    return(names(x[[i]])[grep(paste("\\b", n[[i]], "(?=$|,)", sep = ""), x[[i]], perl = T)])
+  }
+}, x = kegids, n = names(kegids))
+
+# It works, but we get some strange misses, mostly those that have only one hsa entry? It also doesn't return the index names.
+# Let's try without the condition
+
+aa <- lapply(seq_along(kegids), function(x, n, i){
+  names(x[[i]])[grep(paste("\\b", n[[i]], "(?=$|,)", sep = ""), x[[i]], perl = T)]
+}, x = kegids, n = names(kegids))
+
+aaa <- lapply(seq_along(kegids), function(x, n, i){
+  names(x[i])[grep(paste("\\b", n[[i]], "(?=$|,)", sep = ""), x[[i]], perl = T)]
+  names(x[[i]])[grep(paste("\\b", n[[i]], "(?=$|,)", sep = ""), x[[i]], perl = T)]
+}, x = kegids, n = names(kegids))
+
+aaaa <- lapply(kegids, function(x, n, i){
+  names(x[i])[grep(paste("\\b", n[[i]], "(?=$|,)", sep = ""), x[i], perl = T)]
+}, x = kegids, n = names(kegids))
+
+b <- lapply(seq_along(kegids), function(x, i){
+  x[[i]][grep(paste("\\b", n[[i]], "(?=$|,)", sep = ""), x[[i]], perl = T)]
+}, n = names(kegids))
+
+lapply(seq_along(ii), function(x){
+  cat(x)
+})
+
+bb <- sapply(ii, function(x){
+  names(ii)
+}, USE.NAMES = T)
+
+bbb <- sapply(seq_along(kegids), function(x, n, i){
+  names(x[[i]])[grep(paste("\\b", n[[i]], "(?=$|,)", sep = ""), x[[i]], perl = T)]
+}, x = kegids, n = names(kegids), USE.NAMES = T)
+
+c <- sapply(kegids, function(x, n, i){
+  names(x[[i]])[grep(paste("\\b", n[[i]], "(?=$|,)", sep = ""), x[[i]], perl = T)]
+}, x = kegids, n = names(kegids), USE.NAMES = T)
+
+cc <- sapply(ii, function(x){
+  paste("\\b", names[[i]], "(?=$|,)", sep = "")
+}, USE.NAMES = T)
+
+n <- names(ii)
+
+ccc <- llply(kegids, function(x, n, i){
+  if (length(names(x[[i]])) > 1){
+    paste("\\b", n[[i]], "(?=$|,)", sep = "")
+  }
+  else {
+    names(x[[i]])
+  }
+}, n = names(kegids))
+
+ddd <- sapply(kegids, function(x, n, i){
+  if (length(names(x)) > 1) {
+    paste("\\b", names(n[[i]]), "\\b", sep = "")
+  }
+  else {
+    names(x)
+  }
+}, n = kegids, i = names(kegids))
+
+
+eee <- lapply(seq_along(kegids), function(x, n, i){
+  if (length(names(x[[i]])[grep(paste("\\b", n[[i]], "(?=$|,)", sep = ""), x[[i]], perl = T)]) > 1){
+    names(x[[i]])[grep(paste("\\b", n[[i]], "(?=$|,)", sep = ""), x[[i]], perl = T)]
+  }
+  else {
+    names(x[[i]])
+  }
+}, x = kegids, n = names(kegids))
+
+fff <- imap(ii, function(x, y){
+  length(names(ii))
+})
+
+
+c <- list(names(kegids))
+```
+
+
+## Code by JD
+```{r}
+
+l1=lapply(kegids, function(x) {
+A=list()
+A1=list()
+for(i in 1:nrow(data.frame(x,stringsAsFactors = F))){
+ if(nrow(x)>1){
+    A[i] <- grep(paste("\\b", names(x), "(?=$|,)", sep = ""),data.frame(x,stringsAsFactors = F)[i,],value=T,perl=T)
+    A1[i] <- ifelse(is.null(A[i])==T,"NULL",rownames(x))
+ } else {
+   A1[i]=rownames(x)
+ }
+}
+})
+
+```
+
+```{r}
+l1=lapply(ii, function(x) {
+A=list()
+A1=list()
+for(i in 1:nrow(data.frame(x,stringsAsFactors = F))){
+ if(nrow(data.frame(x,stringsAsFactors = F)) > 1){
+    A[i] <- grep(paste("\\b", names(x), "(?=$|,)", sep = ""),data.frame(x,stringsAsFactors = F)[i,],value=T,perl=T)
+    A1[i] <- ifelse(is.null(A[i])==T,"NULL",rownames(x))
+ } else {
+   A1[i]=rownames(x)
+ }
+}
+})
+
+l2 <- lapply(ii, function(x){
+  for (i in 1:nrow(data.frame(x, stringsAsFactors = F))){
+    return(rownames(x))
+  }
+})
+
+l3 = list()
+for (i in x){
+  l3[i] <- names(x)
+}
+
+lapply(x, function(x, n){
+  names(x)
+  names(n)
+}, n = names(x))
+
+
+l4 <- lapply(ii, function(x){
+  
+  names(x[i])
+})
+
+A = list()
+for (i in ii){
+A[i] <- names(ii)
+}
+```
+
+```{r}
+library(plyr)
+yyy <- plyr::ldply(ii, rbind)
+yyy <- t(yyy)
+yyy <- data.frame(yyy, stringsAsFactors = F)
+colnames(yyy) <- yyy[1,]
+yyy <- yyy[-1, ]
+#yyy$hsa <- rownames(yyy)
+#library(dplyr)
+#yyy <- select(yyy, hsa, everything())
+# yyy$hsa <- rownames(yyy)
+
+grep(paste("\\b", "COA5", "\\b", sep = ""), yyy$COA5, perl = T, value = T)
+grep(paste("\\b", "GATA2", "\\b(?=$|,)", sep = ""), yyy$GATA2, perl = T, value = T)
+
+
+rownames(yyy)
+rownames(yyy)[grep(paste("\\b", "GATA2", "\\b(?=$|,)", sep = ""), yyy$GATA2, perl = T)]
+
+
+apply(yyy, 2, function(x){
+  y <- colnames(x)[i]
+  paste("\\b", y, "\\b(?=$|,)", sep = "")
+})
+
+sapply(yyy, function(x){ # works, but returns the rows with the gene names. Don't want that.
+  grep(paste("\\b", x[1], "\\b(?=$|,)", sep = ""), x, perl = T, value = T)
+})
+
+sapply(yyy, function(x){ # works, but returns the rows with the gene names. Don't want that.
+  grep(paste("\\b", colnames(x), "\\b(?=$|,)", sep = ""), x, perl = T, value = T)
+})
+
+sapply(yyy, function(x){
+  colnames(x[i])
+})
+
+apply(yyy, 2, function(x){
+  colnames(x)
+})
+
+sapply(colnames(yyy), function(x){ # works 
+  y <- paste("\\b", x, "\\b(?=$|,)", sep = "")
+  grep(y, yyy[, x], perl = T, value = T)
+})
+
+sapply(colnames(yyy), function(x){ # works
+  y <- paste("\\b", x, "\\b(?=$|,)", sep = "")
+  rownames(yyy)[grep(y, yyy[, x], perl = T)]
+})
+
+l1 <- data.frame(sapply(colnames(yyy), function(x){ # works
+  y <- paste("\\b", x, "\\b(?=$|,)", sep = "")
+  rownames(yyy)[grep(y, yyy[, x], perl = T)]
+}))
+
+###
+
+library(plyr)
+kg_df <- plyr::ldply(kegids, rbind)
+kg_df <- t(kg_df)
+kg_df <- data.frame(kg_df, stringsAsFactors = F)
+colnames(kg_df) <- kg_df[1,]
+kg_df <- kg_df[-1, ]
+
+l2 <- data.frame(sapply(colnames(kg_df), function(x){ # works
+  y <- paste("\\b", x, "\\b(?=$|,)", sep = "")
+  rownames(kg_df)[grep(y, kg_df[, x], perl = T)]
+}))
+
+l2 <- sapply(colnames(kg_df), function(x){ # works. But there are a few missing that shouldn't be. We need an if statement.
+  y <- paste("\\b", x, "\\b(?=$|,)", sep = "")
+  rownames(kg_df)[grep(y, kg_df[, x], perl = T)]
+})
+
+zzz <- kg_df[1:100, ]
+
+sapply(colnames(kg_df), function(x){ # works. Now for the else part.
+  y <- paste("\\b", x, "\\b(?=$|,)", sep = "")
+  if (length(grep(x, kg_df[, x])) == 1){
+    rownames(kg_df)[grep(x, kg_df[, x])]
+  }
+})
+
+l1 <- sapply(colnames(kg_df), function(x){ # work. But we're still missing some we shouldn't.  Try elseif?
+  if (length(grep(x, kg_df[, x])) == 1){
+    rownames(kg_df)[grep(x, kg_df[, x])]
+  }
+  else {
+    y <- paste("\\b", x, "\\b(?=$|,)", sep = "")
+    rownames(kg_df)[grep(y, kg_df[, x], perl = T)]
+  }
+})
+
+sapply(colnames(kg_df), function(x){ 
+  if (length(grep(x, kg_df[, x])) == 1){
+    rownames(kg_df)[grep(x, kg_df[, x])]
+  }
+  else {
+    y <- paste("\\b", x, "\\b(?=$|,)", sep = "")
+    rownames(kg_df)[grep(y, kg_df[, x], perl = T)]
+  }
+  else if (length(grep(y, kg_df[, x], perl = T)) > 1){
+    z <- paste("\\b")
+  }
+})
+
+## to investigate why some are returning too many matches, and others are still missing, we'll use the stringr package.
+
+
+
+```
+
+-->
+
 
 <!-- ## This block of code sought to use g:Profiler to fill the gaps of the gene identities associated with the probes that were not filled through Affy process. We ran into trouble with the 'pid_all' variable, which seems to think that all 34,127 rows are unique, and yet there should only be 22,011 probe ids, and they did not contain (most?) of the ids in the 'g_prune' variable?
 

@@ -1,0 +1,252 @@
+---
+title: "Progress to date"
+author: "Ian Brettell"
+date: "21 December 2017"
+output: ioslides_presentation
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+
+## SNP data
+
+* We have genotype data for 2,084 SNPs in **181** individuals from the AIBL cohort ("AIBL SNPs").
+
+* Of these 2,084 SNPs, **1,527** are in LD with other SNPs ("proxy SNPs").
+- for a total of **18,118** proxy SNPs
+
+## Annotation for SNP data
+
+* Using the bioconductor `biomaRt`, we obtained the locations and ensembl IDs for the AIBL SNPs.
+
+
+## 1.1 Import files
+
+```{r}
+aibl_snps <- read.delim("C:/Users/bre227/Dropbox/eQTL/Data/Expanded SNP set/AIBLgene_SNP_LIST_04032015.tsv")
+snap_edit <- read.delim("C:/Users/bre227/Dropbox/eQTL/Data/Expanded SNP set/snapResults_edit.txt")
+snap <- read.delim("C:/Users/bre227/Dropbox/eQTL/Data/Expanded SNP set/snapResults.txt")
+```
+
+## 1.2 Combine datasets
+
+Note: 'snap_edit' has removed all SNPs from 'snap' that did not have proxies.
+
+```{r}
+# How many SNPs are there in snap_edit?
+length(unique(snap_edit$SNP)) # Shows that 557 have been removed from aibl_snps. 
+# How many genes are there in aibl_snps?
+length(unique(aibl_snps$GENE))
+# How many aibl_snps don't have an associated gene?
+which(aibl_snps$GENE == "")
+# One entry has "-" in the gene column.
+which(aibl_snps$GENE == "-") # shows that there is 1 additional SNP with no associated gene
+length(setdiff(aibl_snps$SNP, snap_edit$SNP)) # same number as above - 557 removed.
+# How many unique proxy SNPs?
+length(unique(snap_edit$Proxy))
+```
+
+```{r}
+library(tidyverse)
+AIBLdummy <- dplyr::select(aibl_snps, SNP, GENE) # creates dummy data frame with just two variables
+snap2 <- left_join(snap_edit, AIBLdummy, by = "SNP") # combine data frames
+rm(AIBLdummy) # remove dummy
+snap2 <- dplyr::select(snap2, SNP, SNP_gene = "GENE", dplyr::everything())# reorder columns
+```
+
+*19 December 2017*
+
+## 1.3 Get gene names and locations for AIBL_snps
+
+Create vector of aibl_snps
+
+```{r}
+snps <- as.vector(aibl_snps$SNP)
+```
+
+Get ensembl ids and loci
+
+```{r, results = "hide"}
+library(biomaRt)
+listMarts()
+mart_snps <- useMart('ENSEMBL_MART_SNP')
+listDatasets(mart_snps) # lists datasets available
+mart_snps <- useMart('ENSEMBL_MART_SNP', 'hsapiens_snp')
+```
+
+```{r}
+SNP_genes <- getBM(attributes = c("refsnp_id", "chr_name", "chrom_start", "chrom_end", "ensembl_gene_stable_id"),
+                     filters = "snp_filter",
+                     values = snps,
+                     mart = mart_snps)
+```
+
+See how many SNPs returned results
+```{r}
+length(unique(SNP_genes$refsnp_id))
+```
+
+Create `ensembl_ids' vector of unique ensembl gene ids from 'SNP_genes'
+
+```{r}
+ensembl_ids <- unique(SNP_genes$ensembl_gene_stable_id)
+```
+
+Use 'ensembl_ids' to get loci and hgnc symbols for genes
+
+```{r, results = "hide"}
+listMarts()
+mart_genes <- useMart('ENSEMBL_MART_ENSEMBL')
+listDatasets(mart_genes)
+mart_genes <- useMart('ENSEMBL_MART_ENSEMBL', 'hsapiens_gene_ensembl')
+```
+
+```{r}
+ensembl_genes <- getBM(attributes = c("ensembl_gene_id", "chromosome_name", "start_position", "end_position", "strand", "hgnc_symbol"),
+                       filters = "ensembl_gene_id",
+                       values = ensembl_ids,
+                       mart = mart_genes)
+```
+
+Bind both tables by ensembl_id to give full table of genes associated with the AIBL snps
+
+```{r}
+SNP_genes_full <- left_join(SNP_genes, ensembl_genes, by = c("ensembl_gene_stable_id" = "ensembl_gene_id"))
+```
+
+<!---
+This tests whether we can remove the rows that returned "LRG..." in the 'ensemble_gene_stable_id' column without losing any information.
+```{r}
+test <- SNP_genes_full[grep("LRG", SNP_genes_full$ensembl_gene_stable_id), ] # creates data frame with just "LRG" rows (161 rows total)
+test2 <- SNP_genes_full[-grep("LRG", SNP_genes_full$ensembl_gene_stable_id), ] # creates data frame with no "LRG" rows
+setdiff(test$refsnp_id, test2$refsnp_id) # tests whether there are any differences between the refsnp_ids of 'test' and 'test2' (that is, if there are differences, the "LRG" rows would not be duplicates). Returns 'character(0)'
+which((test$refsnp_id %in% test2$refsnp_id) == "FALSE") # just to make sure, we test again whether there were any non-matches. Returns 'integer(0), i.e. all refsnp_ids are in both 'test' and 'test2'.
+rm(test)
+rm(test2)
+```
+--->
+
+Remove duplicate rows with "LRG..." in the 'ensembl_gene_stable_id' column
+
+```{r}
+SNP_genes_full <- SNP_genes_full[-grep("LRG", SNP_genes_full$ensembl_gene_stable_id), ]
+dim(SNP_genes_full)
+length(unique(SNP_genes_full$refsnp_id))
+```
+
+
+## 1.4 Get gene names and locations for proxy snps
+
+Create vector of proxy snps
+
+```{r}
+proxy_snps <- as.vector(unique(snap_edit$Proxy))
+```
+
+Get ensembl ids and loci for proxies
+
+```{r, results = "hide"}
+listMarts()
+mart_snps <- useMart('ENSEMBL_MART_SNP')
+listDatasets(mart_snps) # lists datasets available
+mart_snps <- useMart('ENSEMBL_MART_SNP', 'hsapiens_snp')
+
+proxy_genes <- getBM(attributes = c("refsnp_id", "chr_name", "chrom_start", "chrom_end", "ensembl_gene_stable_id"),
+                     filters = "snp_filter",
+                     values = proxy_snps,
+                     mart = mart_snps)
+```
+
+
+See how many SNPs returned results
+```{r}
+length(unique(proxy_genes$refsnp_id))
+```
+
+
+<!-- Again, testing whether we can remove the rows that returned "LRG..." in the 'ensemble_gene_stable_id' column without losing any information.
+```{r}
+test <- proxy_genes[grep("LRG", proxy_genes$ensembl_gene_stable_id), ] # creates data frame with just "LRG" rows (161 rows total)
+test2 <- proxy_genes[-grep("LRG", proxy_genes$ensembl_gene_stable_id), ] # creates data frame with no "LRG" rows
+setdiff(test$refsnp_id, test2$refsnp_id) # tests whether there are any differences between the refsnp_ids of 'test' and 'test2' (that is, if there are differences, the "LRG" rows would not be duplicates). Returns 'character(0)'
+which((test$refsnp_id %in% test2$refsnp_id) == "FALSE") # just to make sure, we test again whether there were any non-matches. Returns 'integer(0), i.e. all refsnp_ids are in both 'test' and 'test2'.
+rm(test)
+rm(test2)
+```
+--->
+
+Remove rows with "LRG" in 'ensemble_gene_stable_id'
+
+```{r}
+proxy_genes <- proxy_genes[-grep("LRG", proxy_genes$ensembl_gene_stable_id), ]
+```
+
+Create `ensembl_ids' vector of unique ensembl gene ids from 'proxy_genes'
+
+```{r}
+ensembl_ids_proxies <- unique(proxy_genes$ensembl_gene_stable_id)
+```
+
+Use 'ensembl_ids' to get loci and hgnc symbols for genes
+
+```{r, results = "hide"}
+listMarts()
+mart_genes <- useMart('ENSEMBL_MART_ENSEMBL')
+listDatasets(mart_genes)
+mart_genes <- useMart('ENSEMBL_MART_ENSEMBL', 'hsapiens_gene_ensembl')
+```
+
+```{r, results = "hide"}
+ensembl_proxy_genes <- getBM(attributes = c("ensembl_gene_id", "chromosome_name", "start_position", "end_position", "strand", "hgnc_symbol"),
+                       filters = "ensembl_gene_id",
+                       values = ensembl_ids_proxies,
+                       mart = mart_genes)
+```
+
+Bind both tables by ensembl_id to give full table of genes associated with the AIBL snps
+
+```{r}
+proxy_genes_full <- left_join(proxy_genes, ensembl_proxy_genes, by = c("ensembl_gene_stable_id" = "ensembl_gene_id"))
+dim(proxy_genes_full)
+```
+
+## 1.5 Determine differences between genes in SNP and proxy lists
+
+Find out how many unique genes there are in the SNP and proxy lists
+
+```{r}
+length(unique(SNP_genes_full$ensembl_gene_stable_id))
+length(unique(proxy_genes_full$ensembl_gene_stable_id))
+```
+
+
+Find out how many proxy genes are different from the SNP genes, and vice versa
+
+```{r}
+length(setdiff(SNP_genes_full$ensembl_gene_stable_id, proxy_genes_full$ensembl_gene_stable_id))
+length(setdiff(proxy_genes_full$ensembl_gene_stable_id, SNP_genes_full$ensembl_gene_stable_id))
+```
+So 126/621 genes in the AIBL SNP list  are not in the proxy list, and 608/1103 genes in the proxy list are not in the SNP list.
+
+Write tables for future analysis
+
+```{r}
+write.table()
+```
+
+
+## Slide with R Output
+
+```{r cars, echo = TRUE}
+summary(cars)
+```
+
+## Slide with Plot
+
+```{r pressure}
+plot(pressure)
+```
+
