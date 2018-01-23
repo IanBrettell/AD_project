@@ -370,7 +370,7 @@ gts[y] <- NULL # removes those columns
 
 colnames(gts) <- c("chromosome", "position", "gene", "snp", gts[1, 5:ncol(gts)]) # replace column names with correct AIBL IDs
 
-gts <- gts[-c(1:3), -c(1:3)] # remove extraneous first three columns and first three rows
+gts <- gts[-c(1:3), ] # remove extraneous first three rows
 ```
 
 Write table to working folder
@@ -479,9 +479,9 @@ ped <- ped[-unique(df2[, 1]), ]# remove those rows
 # noticed that the row names are not re-adjusted, so we'll do that manually
 rownames(ped) <- seq(1:nrow(ped))
 
-# PLINK revealed another error - AIBL.Id 284 has a third allele for rs2247856 - convert to NA
+# PLINK revealed another error - AIBL.Id 74 has a third allele for rs2247856 - convert to NA
 a <- grep("rs2247856", ped$snp)
-b <- grep("X284", colnames(ped))
+b <- grep("X74", colnames(ped))
 ped[a, b] <- NA
 
 # After trying to run it again, PLINK revealed a further error - we need to find which rows (SNPs) have all NA and remove
@@ -567,7 +567,7 @@ ped4[is.na(ped4)] <- "0 0"
 write.table(ped4, "C:/Users/bre227/Documents/R/AD_project/Working/plink/snp_data.ped", row.names = F, col.names = F, quote = F, sep = "\t")
 ```
 
-I fed the files to PLINK using the following code: `./plink --file snp_data --map3 --noweb --no-fid --no-parents --assoc` and `./plink --file snp_data --map3 --noweb --no-fid --no-parents --fisher`, which created the output files 'plink.assoc' and 'plink.assoc.fisher'. 
+I fed the files to PLINK using the following code: `./plink --file snp_data --map3 --noweb --no-fid --no-parents --reference-allele ref_alleles.txt --assoc` and `./plink --file snp_data --map3 --noweb --no-fid --no-parents --reference-allele ref_alleles.txt --fisher`, which created the output files 'plink.assoc' and 'plink.assoc.fisher'. 
 
 Take a look at the files.
 
@@ -625,7 +625,7 @@ probes <- read.delim("C:/Users/bre227/Documents/R/AD_project/Working/affy_probes
 sig_pk <- left_join(sig_pk, probes, by = "entrez_id")
 # remove second ensembl id and gene symbol columns (they have no additional information)
 sig_pk <- dplyr::select(sig_pk, -ensembl_id.y, -gene_symbol) %>% 
-  rename(ensembl_id.x = "ensembl_id")
+  rename(ensembl_id = ensembl_id.x)
 
 # add NAs to hgnc_symbol column
 sig_pk$hgnc_symbol[sig_pk$hgnc_symbol == ""] <- NA
@@ -713,7 +713,7 @@ So we created a .fam file using `./plink --file snp_data --out snp_data --make-b
 
 Output file created (then renamed) as: 'plink.assoc.logistic.genotype'.
 
-Then ran again without the genotype query: `./plink --file snp_data --logistic --beta --reference-allele ref_alleles.txt --covar.txt`
+Then ran again without the genotype query: `./plink --file snp_data --map3 --no-fid --no-parents --logistic --beta --reference-allele ref_alleles.txt --noweb --covar cov.txt`
 
 Also re-ran `--assoc` and `--fisher` with the reference alleles file to ensure conformity with the logistic regression output (and then ran the above code again).
 
@@ -758,7 +758,7 @@ nrow(snp_gns[grep("PICALM|BIN1|CR1|ABCA7|MS4A6A|CLU|FERMT2|DSG2|EPHA1|SORL1|ZCWP
 # now check how many hits we get with our significant SNPs list
 sig_snps_log[grep("PICALM|BIN1|CR1|ABCA7|MS4A6A|CLU|FERMT2|DSG2|EPHA1|SORL1|ZCWPW1", sig_snps_log$hgnc_symbol), ]
 ```
-Only one - CLU.
+**Four genes**: *BIN1*, *CLU*, *PICALM*, and *ABCA7*.
 
 Ran PLINK again for association, but this time with 10,000 permutations and the reference allele file: `./plink --file snp_data --map3 --noweb --no-fid --no-parents --assoc --mperm 10000 --reference-allele ref_alleles.txt`. Output two files:
 
@@ -775,7 +775,7 @@ perm <- read.table("C:/Users/bre227/Documents/R/AD_project/Working/plink/plink.a
 perm[which(perm$EMP2 < 0.7), ]
 ```
 
-Only two SNPs have a corrected p-value of less than 0.7! And neither is significant.
+Only one SNP has a corrected p-value of less than 0.7!
 
 ***
 
@@ -985,6 +985,10 @@ colnames(exdata) <- as.vector(ids2$x) # replace colnames with ids2
 
 # extract only those columns (samples) for which we have genotype data
 exdata <- exdata[, colnames(exdata) %in% colnames(ped7)]
+
+# create column for probe ID and reorder
+exdata$probe_id <- rownames(exdata)
+exdata <- select(exdata, probe_id, everything())
 ```
 
 #### Finalise covariates file by extracting only those columns (samples) for which we have genotype data
@@ -992,6 +996,90 @@ exdata <- exdata[, colnames(exdata) %in% colnames(ped7)]
 ```{r}
 cns <- c("id", colnames(meta)[colnames(meta) %in% colnames(ped7)])
 meta <- meta[, cns]
+```
+
+Write files
+
+```{r}
+write.table(ped7, "C:/Users/bre227/Documents/R/AD_project/Working/matrixeqtl/snps.txt", col.names = T, row.names = F, quote = F, sep = "\t")
+write.table(meta, "C:/Users/bre227/Documents/R/AD_project/Working/matrixeqtl/covs.txt", col.names = T, row.names = F, quote = F, sep = "\t")
+write.table(exdata, "C:/Users/bre227/Documents/R/AD_project/Working/matrixeqtl/expr.txt", col.names = T, row.names = F, quote = F, sep = "\t")
+```
+
+Set up parameters for eQTL
+```{r}
+library(MatrixEQTL)
+useModel = modelLINEAR
+SNP_file_name = "C:/Users/bre227/Documents/R/AD_project/Working/matrixeqtl/snps.txt"
+expression_file_name = "C:/Users/bre227/Documents/R/AD_project/Working/matrixeqtl/expr.txt"
+covariates_file_name = "C:/Users/bre227/Documents/R/AD_project/Working/matrixeqtl/covs.txt"
+output_file_name = tempfile()
+
+pvOutputThreshold = 1e-2
+errorCovariance = numeric()
+```
+
+Load snps data
+```{r}
+snps = SlicedData$new()
+snps$fileDelimiter = "\t"
+snps$fileOmitCharacters = "NA"
+snps$fileSkipRows = 1
+snps$fileSkipColumns = 1
+snps$fileSliceSize = 2000
+snps$LoadFile( SNP_file_name )
+```
+
+Load gene data
+```{r}
+gene = SlicedData$new()
+gene$fileDelimiter = "\t"
+gene$fileOmitCharacters = "NA"
+gene$fileSkipRows = 1
+gene$fileSkipColumns = 1
+gene$fileSliceSize = 2000
+gene$LoadFile( expression_file_name )
+```
+
+Load covariate data
+
+```{r}
+cvrt = SlicedData$new()
+cvrt$fileDelimiter = "\t"
+cvrt$fileOmitCharacters = "NA"
+cvrt$fileSkipRows = 1
+cvrt$fileSkipColumns = 1
+cvrt$fileSliceSize = 2000
+cvrt$LoadFile( covariates_file_name )
+```
+
+```{r}
+ me = Matrix_eQTL_engine(
+    snps = snps,
+    gene = gene,
+    cvrt = cvrt,
+    output_file_name = output_file_name,
+    pvOutputThreshold = pvOutputThreshold,
+    useModel = useModel, 
+    errorCovariance = errorCovariance, 
+    verbose = TRUE,
+    pvalue.hist = TRUE,
+    min.pv.by.genesnp = FALSE,
+    noFDRsaveMemory = FALSE)
+```
+
+Pull out significant SNP-gene relationships
+
+```{r}
+# pull out eQTLs from output
+eqtls <- me[["all"]]["eqtls"]
+
+# pull out significant SNP-gene relationships (FDR < 0.05)
+sig_eqtls <- eqtls[eqtls$FDR < 0.05, ]
+dim(sig_eqtls)
+
+# annotate
+sig_eqtls <- left_join(sig_eqtls, snp_gns, by = c("snps" = "refsnp_id"))
 ```
 
 
