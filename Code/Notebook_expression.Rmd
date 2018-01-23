@@ -109,7 +109,7 @@ meta2 <- dplyr::select(metadata2,
                 PET,
                 apoe4,
                 Age)
-write.table(meta2, "C:/Users/bre227/Documents/R/AD_project/Working/key_metadata.txt", col.names = T, row.names = F, quote = F)
+write.table(meta2, "C:/Users/bre227/Documents/R/AD_project/Working/key_metadata.txt", col.names = T, row.names = F, quote = F, sep = "\t")
 ```
 
 

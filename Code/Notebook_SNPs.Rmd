@@ -1,9 +1,7 @@
 ---
 title: "R Notebook - SNP data"
 author: "Ian Brettell"
-output:
-  html_document:
-    df_print: paged
+output: html_notebook
 ---
 
 *8 December 2017*
@@ -29,6 +27,8 @@ library(annotables)
 biocLite("ensemblVEP")
 library(ensemblVEP)
 biocLite("snpStats")
+
+install.packages("MatrixEQTL")
 ```
 
 
@@ -327,7 +327,20 @@ Note that the AIBL IDs are incorrect in the excel file. We attach the correct ID
 
 ```{r}
 ids2 <- read.delim("C:/Users/bre227/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression_IDs_UpdtdDec2017.txt", sep = " ")
-ids2 <- as.vector(sort(ids2$x))
+
+# bind colnames for exdata to new IDs
+ids2$old_ids <- as.integer(gsub("X", "", colnames(exdata)))
+
+# reorder to same order as the SNP genotype data
+ids2 <- ids2[order(ids2$old_ids), ]
+
+# merge with rownames of genotype data to ensure perfect match
+ids3 <- data.frame(gtypes[5:nrow(gtypes), 1])# extract AIBL IDs from genotype data
+ids3$X__1 <- as.integer(ids3$X__1)
+ids3 <- merge(ids3, ids2, by.x = "X__1", by.y = "old_ids")
+
+# add new column names to the genotype data
+ids2 <- as.vector(ids3$x)
 gtypes$AIBL_ID_new <- c(NA, NA, NA, "AIBL_ID_new", as.vector(ids2))
 gtypes <- dplyr::select(gtypes, AIBL_ID_new, dplyr::everything()) # reorder to bring AIBL_ID_new to the front
 ```
@@ -357,10 +370,7 @@ gts[y] <- NULL # removes those columns
 
 colnames(gts) <- c("chromosome", "position", "gene", "snp", gts[1, 5:ncol(gts)]) # replace column names with correct AIBL IDs
 
-gts <- gts[-c(1:3), ] # remove extraneous first three rows
-
-colnames(gtypes) <- gtypes[2, ] # create column <-  names
-gtypes <- gtypes[-c(1,2), ]# remove first two columns with extraneous information
+gts <- gts[-c(1:3), -c(1:3)] # remove extraneous first three columns and first three rows
 ```
 
 Write table to working folder
@@ -518,7 +528,7 @@ Write map file
 map <- data.frame(lapply(map, function(x){
   gsub(" ", "", x)
 }), stringsAsFactors = F)
-write.table(map, "C:/Users/bre227/Documents/R/AD_project/Working/snp_data.map", row.names = F, col.names = F, quote = F, sep = "\t")
+write.table(map, "C:/Users/bre227/Documents/R/AD_project/Working/plink/snp_data.map", row.names = F, col.names = F, quote = F, sep = "\t")
 ```
 
 Reformat ped into PED format
@@ -554,7 +564,7 @@ ped4 <- data.frame(lapply(ped3, function(x){
 ped4[is.na(ped4)] <- "0 0"
 
 # write file
-write.table(ped4, "C:/Users/bre227/Documents/R/AD_project/Working/snp_data.ped", row.names = F, col.names = F, quote = F, sep = "\t")
+write.table(ped4, "C:/Users/bre227/Documents/R/AD_project/Working/plink/snp_data.ped", row.names = F, col.names = F, quote = F, sep = "\t")
 ```
 
 I fed the files to PLINK using the following code: `./plink --file snp_data --map3 --noweb --no-fid --no-parents --assoc` and `./plink --file snp_data --map3 --noweb --no-fid --no-parents --fisher`, which created the output files 'plink.assoc' and 'plink.assoc.fisher'. 
@@ -562,8 +572,8 @@ I fed the files to PLINK using the following code: `./plink --file snp_data --ma
 Take a look at the files.
 
 ```{r}
-pk_ass <- read.table("C:/Users/bre227/Documents/R/AD_project/Working/plink.assoc", na.strings = NA, header = T)
-pk_fsh <- read.table("C:/Users/bre227/Documents/R/AD_project/Working/plink.assoc.fisher", na.strings = NA, header = T)
+pk_ass <- read.table("C:/Users/bre227/Documents/R/AD_project/Working/plink/plink.assoc", na.strings = NA, header = T, fill = T)
+pk_fsh <- read.table("C:/Users/bre227/Documents/R/AD_project/Working/plink/plink.assoc.fisher", na.strings = NA, header = T, fill = T)
 
 length(which(pk_ass$P < 0.05))
 length(which(pk_fsh$P < 0.05))
@@ -573,11 +583,13 @@ Shows that the Fisher exact test output had fewer significant SNPs, so we'll pre
 
 ```{r}
 #create table of significant SNPs
-sig_pk <- pk_fsh[(pk_fsh$P < 0.05) == T, ]
+sig_pk <- pk_fsh[(pk_fsh$P < 0.05) == T &!is.na(pk_fsh$P), ]
+dim(sig_pk)
 # merge with gene ids from 'aible_snp_genes.txt' file
 snp_gns <- read.delim("C:/Users/bre227/Documents/R/AD_project/Working/aibl_snp_genes.txt", sep = "\t", header = T)
 library(dplyr)
 sig_pk <- left_join(sig_pk, snp_gns, by = c("SNP" = "refsnp_id"))
+# note that some SNPs map to multiple genes
 
 # how many unique genes?
 length(unique(sig_pk$hgnc_symbol))
@@ -675,8 +687,11 @@ Obtain reference allele from BioMart query, in accordance with: <http://zzz.bwh.
 ```{r}
 # read in table
 snp_gns <- read.delim("C:/Users/bre227/Documents/R/AD_project/Working/aibl_snp_genes.txt", header = T)
-ref_al <- subset(snp_gns, select = c("refsnp_id", "allele_1"))
-write.table(ref_al, "C:/Users/bre227/Documents/R/AD_project/Working/ref_alleles.txt", row.names = F, col.names = F, quote = F, sep = "\t")
+ref_al <- dplyr::select(snp_gns, refsnp_id, minor_allele)
+ref_al <- as.tibble(sapply(ref_al, as.character), stringsAsFactors = F)
+ref_al <- ref_al[!duplicated(ref_al), ]
+
+write.table(ref_al, "C:/Users/bre227/Documents/R/AD_project/Working/plink/ref_alleles.txt", row.names = F, col.names = F, quote = F, sep = "\t")
 ```
 
 Write covariate file, in accordance with: <http://zzz.bwh.harvard.edu/plink/data.shtml#covar>
@@ -689,7 +704,7 @@ colnames(cov)[colnames(cov) == "Demographic.Sex"] <- "Sex"
 cov$PET <- NULL # because it's already in the PED file
 cov$FID <- cov$AIBL.Id # to make a family ID column - see <http://zzz.bwh.harvard.edu/plink/data.shtml#ped>
 cov <- dplyr::select(cov, FID, IID = "AIBL.Id", everything())
-write.table(cov, "C:/Users/bre227/Documents/R/AD_project/Working/cov.txt", row.names = F, col.names = T, quote = F, sep = "\t")
+write.table(cov, "C:/Users/bre227/Documents/R/AD_project/Working/plink/cov.txt", row.names = F, col.names = T, quote = F, sep = "\t")
 ```
 
 Tried to run `./plink --file snp_data --logistic --genotypic --beta --reference-allele ref_alleles.txt --covar.txt` but it returned the error message: "No file [snp_data.fam] exists."
@@ -700,10 +715,283 @@ Output file created (then renamed) as: 'plink.assoc.logistic.genotype'.
 
 Then ran again without the genotype query: `./plink --file snp_data --logistic --beta --reference-allele ref_alleles.txt --covar.txt`
 
-Import those files
+Also re-ran `--assoc` and `--fisher` with the reference alleles file to ensure conformity with the logistic regression output (and then ran the above code again).
+
+Import just the logistic file (without the genoytpe command).
+
+```{r}
+log <- read.delim("C:/Users/bre227/Documents/R/AD_project/Working/plink/plink.assoc.logistic", header = T, sep = "")
+log <- log[with(log, order(CHR, BP)), ] # sort by chromosome and bp
+
+# Find SNPs that are significant indpendent of covariates
+log2 <- dplyr::select(log[!is.na(log$P), ], -NMISS, -BETA, -STAT) %>% 
+  tidyr::spread(key = TEST, value = P)
+
+length(which(log2$ADD < 0.05))
+length(which(log2$Age < 0.05))
+length(which(log2$apoe4 < 0.05))
+length(which(log2$Sex < 0.05))
+```
+
+This means there apoe4 was a significant covariate in *all* SNPs! (As was age in all but two)
+
+Let's pull out the SNPs with ADD < 0.05 and annotate them.
+
+```{r}
+# pull out SNPs that are significant
+sig_snps_log <- log[log$SNP %in% log2$SNP[which(log2$ADD < 0.05)] & log$TEST == "ADD", ]
+# attach annotation data
+sig_snps_log <- dplyr::left_join(sig_snps_log, snp_gns, by = c("SNP" = "refsnp_id"))
+```
+
+# **NOTE** redo association test with permutation before binding the sig_snps_log to the assoc output
+
+*18 January 2018*
+
+See whether any genes cited in Apostolova et al. (2018) *Associations of the top 20 ALheimer Disease risk variants with brain amyloidosis* are in our significant SNPs list.
+
+```{r}
+# first check how many hits we get with these genes from the original SNPs list
+snp_gns[grep("PICALM|BIN1|CR1|ABCA7|MS4A6A|CLU|FERMT2|DSG2|EPHA1|SORL1|ZCWPW1", snp_gns$hgnc_symbol), ]
+nrow(snp_gns[grep("PICALM|BIN1|CR1|ABCA7|MS4A6A|CLU|FERMT2|DSG2|EPHA1|SORL1|ZCWPW1", snp_gns$hgnc_symbol), ])
+
+# now check how many hits we get with our significant SNPs list
+sig_snps_log[grep("PICALM|BIN1|CR1|ABCA7|MS4A6A|CLU|FERMT2|DSG2|EPHA1|SORL1|ZCWPW1", sig_snps_log$hgnc_symbol), ]
+```
+Only one - CLU.
+
+Ran PLINK again for association, but this time with 10,000 permutations and the reference allele file: `./plink --file snp_data --map3 --noweb --no-fid --no-parents --assoc --mperm 10000 --reference-allele ref_alleles.txt`. Output two files:
+
+* plink.assoc
+* plink.assoc.mperm (with the permutation results)
+
+Take a look again, and compare to the logistic regression output
+
+```{r}
+ass <- read.table("C:/Users/bre227/Documents/R/AD_project/Working/plink/plink.assoc", na.strings = NA, header = T, fill = T)
+sig_ass <- ass[ass$P < 0.05 & is.na(ass$P) == F, ]
+
+perm <- read.table("C:/Users/bre227/Documents/R/AD_project/Working/plink/plink.assoc.mperm", na.strings = NA, header = T, fill = T)
+perm[which(perm$EMP2 < 0.7), ]
+```
+
+Only two SNPs have a corrected p-value of less than 0.7! And neither is significant.
+
+***
+
+*19 January 2018*
+
+Use Haploview to see if we get the same permutation results as PLINK.
+
+```{r}
+y <- dplyr::select(snp_gns, refsnp_id, chr_name, chrom_start)
+y$loc <- paste(y$chr_name, y$chrom_start, sep = "")
+y$loc <- paste(y$chr_name, y$chrom_start, sep = ":")
+y$chr_name <- NULL
+y$chr_start <- NULL
+y <- y[y$refsnp_id %in% map$snp, ]
+write.table(y, "C:/Users/bre227/Documents/R/AD_project/Working/haploview/snp_locs.info", col.names = F, row.names = F, sep = "\t", quote = F)
+
+
+ped5 <- ped4
+ped5$family_id <- ped5$AIBL.Id
+ped5$paternal_id <- 0
+ped5$maternal_id <- 0
+ped5 <- dplyr::select(ped5, family_id, AIBL.Id, paternal_id, maternal_id, Demographic.Sex, PET, everything())
+
+write.table(ped5, "C:/Users/bre227/Documents/R/AD_project/Working/haploview/snp_data.ped", col.names = F, row.names = F, sep = "\t", quote = F)
+```
+
+Got the same results with an association test with 10,000 permutations - only two SNPs had p < 0.7, and neither was significant.
+
+## eQTL analysis
+
+Read in data.
+
+```{r}
+exdata <- read.delim("C:/Users/bre227/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression.txt", sep = "", header = T)
+ids2 <- read.delim("C:/Users/bre227/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression_IDs_UpdtdDec2017.txt", sep = " ")
+colnames(exdata) <- as.vector(ids2$x) # replace colnames with ids2
+meta <- read.delim("C:/Users/bre227/Documents/R/AD_project/Working/key_metadata.txt", header = T, sep = "\t")
+```
+
+### Put into format required by `MatrixEQTL` package.
+
+#### Covariates file
+
+```{r}
+library(tidyverse)
+
+# create binary statuses for sex and PET
+meta$Demographic.Sex <- ifelse(meta$Demographic.Sex == "Male", 0, 
+                               ifelse(meta$Demographic.Sex == "Female", 1, NA))
+meta$PET <- ifelse(meta$PET == "POS", 1,
+                   ifelse(meta$PET == "NEG", 0, NA))
+
+# tidy metadata
+meta <- data.frame(t(meta), stringsAsFactors = F)
+colnames(meta) <- meta[1, ]
+meta$id <- rownames(meta)
+rownames(meta) <- seq(1:nrow(meta))
+meta <- dplyr::select(meta, id, dplyr::everything())
+meta <- meta[-1, ]
+
+# tidy probe data
+exdata$probe_id <- rownames(exdata)
+exdata <- dplyr::select(exdata, probe_id, dplyr::everything())
+rownames(exdata) <- seq(1:nrow(exdata))
+```
+
+#### Genotype file
 
 ```{r}
 
+# tidy genotype data
+ped6 <- ped[, -c(1:3)]
+ped6 <- left_join(ped6, dplyr::select(snp_gns[!duplicated(snp_gns$refsnp_id), ], refsnp_id, allele_1, minor_allele), by = c("snp" = "refsnp_id")) %>% 
+  select(snp, allele_1, minor_allele, everything())
+ped6 <- data.frame(lapply(ped6, function(x) gsub("_", " ", x)),
+                   stringsAsFactors = F)
+```
+
+Noticed that for some SNPs the alleles annotated with BioMart differ from the alleles present in our data (e.g. "rs1064261" is annotated as having A and G alleles, but our data shows T and C), and some SNPs are annotated as having the same major and minor alleles (e.g. "rs3753584" which has C for both its major and minor allele). 
+
+We will therefore get another plink output to find calculate which alleles are major and minor when they differ from the BioMart annotations, or when the BioMart annotations seem incorrect. We used the code: `./plink --file snp_data --map3 --noweb --no-fid --no-parents --fisher --out allele_freq`
+
+```{r}
+# import plink data on allele frequencies
+pk_frq <- read.table("C:/Users/bre227/Documents/R/AD_project/Working/plink/allele_freq.assoc.fisher", na.strings = NA, header = T, fill = T)
+pk_frq <- dplyr::select(pk_frq, snp = SNP, pk_major_allele = A2, pk_minor_allele = A1)
+
+# create comparison data frame
+comp <- data.frame(left_join(dplyr::select(ped6, snp, allele_1, minor_allele), pk_frq, by = "snp") %>% 
+  select(snp, allele_1, pk_major_allele, minor_allele, pk_minor_allele), stringsAsFactors = F)
+comp <- data.frame(sapply(comp, as.character), stringsAsFactors = F)
+
+# create empty columns for correct allele calls
+comp$cor_mj <- NA
+comp$cor_mn <- NA
+
+# substitute empty values with NA
+comp[, 2:5] <- sapply(comp[, 2:5], function(x) gsub("0", NA, x))
+comp[, 2:5] <- sapply(comp[, 2:5], function(x) gsub("^$|^ $", NA, x))
+
+# add correct major allele column
+comp$cor_mj <- unlist(apply(comp, 1, function(x){
+  if (is.na(x[2]) == T & is.na(x[3]) == T){ # if both are NA, return NA
+    x[6] <- NA
+  } else if (x[2] == x[5] & x[4] == x[3] & is.na(x[2] == F) & is.na(x[3] == F)){ # if annotated and plink alleles are swapped around, prefer annotated alleles
+    x[6] <- x[2]  
+  } else if (is.na(x[2]) == T & is.na(x[3] == F)){ # if only plink output has an allele, use that
+    x[6] <- x[3]
+  } else if (is.na(x[2]) == F & is.na(x[3] == T)){ # if only the annotation has an allele, use that
+    x[6] <- x[2]
+  } else if (x[2] == x[3] & is.na(x[2] == F) & is.na(x[3] == F)) { # if the annotated and plink alleles are the same, just use the annotated allele
+    x[6] <- x[2]
+  } else { # otherwise use the plink allele
+    x[6] <- x[3]
+  }
+}))
+
+# add correct minor allele column
+comp$cor_mn <- unlist(apply(comp, 1, function(x){
+    if (is.na(x[4]) == T & is.na(x[5]) == T){
+    x[7] <- NA
+  } else if (x[2] == x[5] & x[4] == x[3] & is.na(x[2] == F) & is.na(x[3] == F)){
+    x[7] <- x[4]
+  } else if (is.na(x[4]) == T & is.na(x[5] == F)){
+    x[7] <- x[5]
+  } else if (is.na(x[4]) == F & is.na(x[5] == T)){
+    x[7] <- x[4]
+  } else if (x[4] == x[5] & is.na(x[4]) == F & is.na(x[5]) == F) {
+    x[7] <- x[4]
+  } else {
+    x[7] <- x[5]
+  }
+}))
+```
+
+*23 January 2018*
+
+Incorporate adjusted major and minor allele into ped6 and create genotype where:
+*0 = homozygous major allele
+*1 = heterozygous
+*2 = homozygous minor allele
+```{r}
+ped6$allele_1 <- comp$cor_mj
+ped6$minor_allele <- comp$cor_mn
+
+#
+
+test <- ped6[1:5, ]
+
+out <- t(data.frame(apply(test, 1, function(x){ ## WORKS
+  a <- paste(x[2], x[2], sep = " ")
+  b <- paste(x[2], x[3], sep = " ")
+  c <- paste(x[3], x[2], sep = " ")
+  d <- paste(x[3], x[3], sep = " ")
+  results <- sapply(x, function(y){
+    if (is.na(y) == T){
+      y <- NA
+    }
+    else if (y == a & is.na(y) == F){
+      y <- 0
+    }
+    else if (y == b | y == c & is.na(y) == F){
+      y <- 1
+    } 
+    else if (y == d & is.na(y) == F){
+      y <- 2
+    }
+  })
+  data.frame(do.call(rbind, results))
+})))
+
+out <- t(data.frame(apply(ped6, 1, function(x){ ## WORKS - need to change the second function from sapply to lapply
+  a <- paste(x[2], x[2], sep = " ")
+  b <- paste(x[2], x[3], sep = " ")
+  c <- paste(x[3], x[2], sep = " ")
+  d <- paste(x[3], x[3], sep = " ")
+  results <- lapply(x[4:length(x)], function(y){
+    if (is.na(y) == T){
+      y <- NA
+    }
+    else if (y == a & is.na(y) == F){
+      y <- 0
+    }
+    else if (y == b | y == c & is.na(y) == F){
+      y <- 1
+    } 
+    else if (y == d & is.na(y) == F){
+      y <- 2
+    }
+  })
+  data.frame(do.call(rbind, results))
+})))
+
+# bind snp info to genotype coding
+ped7 <- data.frame(cbind(ped6[, 1], out), stringsAsFactors = F)
+rownames(ped7) <- seq(1:nrow(ped7))
+ped7 <- dplyr::rename(ped7, snpid = V1)
+colnames(ped7) <- gsub("X", "", colnames(ped7))
+```
+
+#### Expression file
+
+```{r}
+exdata <- read.delim("C:/Users/bre227/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression.txt", sep = "", header = T)
+ids2 <- read.delim("C:/Users/bre227/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression_IDs_UpdtdDec2017.txt", sep = " ")
+colnames(exdata) <- as.vector(ids2$x) # replace colnames with ids2
+
+# extract only those columns (samples) for which we have genotype data
+exdata <- exdata[, colnames(exdata) %in% colnames(ped7)]
+```
+
+#### Finalise covariates file by extracting only those columns (samples) for which we have genotype data
+
+```{r}
+cns <- c("id", colnames(meta)[colnames(meta) %in% colnames(ped7)])
+meta <- meta[, cns]
 ```
 
 
