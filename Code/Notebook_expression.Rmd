@@ -173,6 +173,7 @@ We first create an 'ExpressionSet' with genes on rows, and samples on columns, f
 ```{r, results = "hide"}
 library(Biobase)
 ```
+
 ```{r}
 exprs <- as.matrix(t(exdata2[,6:22016])) # leaving behind the first 5 metadata columns
 minimalSet <- ExpressionSet(assayData = exprs)
@@ -290,6 +291,7 @@ autoplot(pca2, data = exdata3, colour = "apoe4", label = T, label.label = "AIBL.
 ```{r, results = "hide"}
 library(Biobase)
 ```
+
 ```{r}
 exprs <- as.matrix(t(exdata3[,6:22016])) # leaving behind the first 5 metadata columns
 minimalSet <- ExpressionSet(assayData = exprs)
@@ -300,6 +302,7 @@ summary(pData)
 ```{r, results = "hide"}
 library(limma)
 ```
+
 ```{r}
 PET_apoe4 <- paste(pData$PET, pData$apoe4, sep = ".") # put PET/apoe4 combinations into a vector
 PET_apoe4
@@ -444,6 +447,9 @@ pid_all <- left_join(pid_symb, pid_ent, by = "probe_id") %>%
   dplyr::select(probe_id, everything())
 
 write.table(pid_all, "C:/Users/bre227/Documents/R/AD_project/Working/affy_probes_annotated.txt", row.names = F, col.names = T, quote = F, sep = "\t")
+
+# find how many probes are annotated
+length(which(pid_all$probe_id %in% rownames(exdata)))
 ```
 
 Combine lists of significant genes for each contrast. Note that combined counts of significant genes for all four contrasts is 3030.
@@ -457,14 +463,14 @@ signif_all <- dplyr::select(signif_apoe4_for_PET_yes, probe_id, P.Value) %>%
   full_join(dplyr::select(signif_apoe4_for_PET_no, probe_id, P.Value), by = "probe_id") %>% 
   full_join(dplyr::select(signif_PET_for_apoe4_yes, probe_id, P.Value), by = "probe_id") %>% 
   full_join(dplyr::select(signif_PET_for_apoe4_no, probe_id, P.Value), by = "probe_id") %>% 
-  rename(P.Value.x = "P.Value.c1", 
-         P.Value.y = "P.Value.c2", 
-         P.Value.x.x = "P.Value.c3", 
-         P.Value.y.y = "P.Value.c4")
+  rename(P.Value.c1 = "P.Value.x", 
+         P.Value.c2 = "P.Value.y", 
+         P.Value.c3 = "P.Value.x.x", 
+         P.Value.c4 = "P.Value.y.y")
 
 nrow(signif_all)
 ```
-Therefore 592 genes are expressed differentially across at least two contrasts
+Therefore 2438 genes are expressed differentially across at least two contrasts
 
 
 Bind gene ids to 'signif_all'
@@ -582,6 +588,7 @@ length(which(test$PET == "POS" & test$apoe4 == "0"))
 length(which(test$PET == "NEG" & test$apoe4 == "1"))
 length(which(test$PET == "NEG" & test$apoe4 == "0"))
 ```
+This suggests that more people tend to either have apoe4 and AD, or not have apoe4 and not have AD, than otherwise.
 
 ***
 
