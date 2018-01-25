@@ -156,7 +156,6 @@ SNP_genes_full$hgnc_symbol[SNP_genes_full$hgnc_symbol == ""] <- NA # replace bla
 
 # write table
 write.table(SNP_genes_full, "C:/Users/bre227/Documents/R/AD_project/Working/aibl_snp_genes.txt", sep = "\t", col.names = T, row.names = F, quote = F)
-
 ```
 
 
@@ -260,7 +259,6 @@ Find out how many unique genes there are in the SNP and proxy lists
 length(unique(SNP_genes_full$ensembl_gene_stable_id))
 length(unique(proxy_genes_full$ensembl_gene_stable_id))
 ```
-
 
 Find out how many proxy genes are different from the SNP genes, and vice versa
 
@@ -776,6 +774,14 @@ nrow(log_adj[log_adj$FDR_BH < 0.05, ])
 ```
 Therefore there are no SNPs below the FDR corrected p-value.
 
+Find which SNPs and genes are signficant in both the association and logistic regression analyses
+
+```{r}
+intersect(sig_snps_log$SNP, sig_pk$SNP)
+intersect(sig_snps_log$hgnc_symbol, sig_pk$hgnc_symbol)
+```
+
+
 # **NOTE** redo association test with permutation before binding the sig_snps_log to the assoc output
 
 *18 January 2018*
@@ -1115,6 +1121,8 @@ dim(sig_eqtls)
 
 # number of unique SNPs
 length(unique(sig_eqtls$snps))
+# number of unique SNP genes
+length(unique(sig_eqtls$gene))
 
 # annotate
 sig_eqtl_snps <- left_join(sig_eqtls, snp_gns, by = c("snps" = "refsnp_id"))
@@ -1125,8 +1133,8 @@ write.table(sig_eqtl_snps, "C:/Users/bre227/Documents/R/AD_project/Working/eqtl_
 write.table(sig_eqtl_gns, "C:/Users/bre227/Documents/R/AD_project/Working/eqtl_gns.txt", row.names = F, col.names = T, quote = F, sep = "\t")
 
 # find any hits with the genes implicated in the 2018 study
-sig_eqtl_snps[grep("PICALM|BIN1|CR1|ABCA7|MS4A6A|CLU|FERMT2|DSG2|EPHA1|SORL1|ZCWPW1", sig_eqtl_snps$hgnc_symbol), ]
-sig_eqtl_gns[grep("PICALM|BIN1|CR1|ABCA7|MS4A6A|CLU|FERMT2|DSG2|EPHA1|SORL1|ZCWPW1", sig_eqtl_gns$hgnc_symbol), ]
+nrow(sig_eqtl_snps[grep("PICALM|BIN1|CR1|ABCA7|MS4A6A|CLU|FERMT2|DSG2|EPHA1|SORL1|ZCWPW1", sig_eqtl_snps$hgnc_symbol), ])
+nrow(sig_eqtl_gns[grep("PICALM|BIN1|CR1|ABCA7|MS4A6A|CLU|FERMT2|DSG2|EPHA1|SORL1|ZCWPW1", sig_eqtl_gns$hgnc_symbol), ])
 
 # see whether any of the SNP genes intersect with the expression genes (i.e. are any of them acting cis?)
 eqtl_snp_gns <- as.vector(na.omit(unique(sig_eqtl_snps$hgnc_symbol)))
@@ -1138,7 +1146,7 @@ length(eqtl_de_gns)
 
 intersect(eqtl_snp_gns, eqtl_de_gns)
 ```
-17 significant AIBL SNPs in 16 genes, affecting the expression levels of 11 genes. None are shared between the SNP genes and the differentially expressed genes, meaning that they all appear to be acting trans.
+130 significant AIBL SNPs in 101 annotated genes, affecting the expression levels of 2242 genes. Only eight of them are shared between the SNP genes and the differentially expressed genes, meaning that only those appear to be acting *cis*.
 
 ***
 
@@ -1381,7 +1389,7 @@ cvrt$LoadFile( covariates_file_name )
 
 #### Pull out significant SNP-gene relationships for POS group
 
-```{r}
+```{r, warning = F}
 # pull out eQTLs from output
 pos_eqtls <- me_pos[["all"]][["eqtls"]]
 
@@ -1397,19 +1405,13 @@ pos_sig_eqtl_gns <- left_join(pos_sig_eqtls, pid_all, by = c("gene" = "probe_id"
 write.table(pos_sig_eqtl_snps, "C:/Users/bre227/Documents/R/AD_project/Working/pos_eqtl_snps.txt", row.names = F, col.names = T, quote = F, sep = "\t")
 write.table(pos_sig_eqtl_gns, "C:/Users/bre227/Documents/R/AD_project/Working/pos_eqtl_gns.txt", row.names = F, col.names = T, quote = F, sep = "\t")
 
-# unique SNPs and the genes they are in
-unique(pos_sig_eqtl_snps$snps)
+# number of unique SNPs
 length(unique(pos_sig_eqtl_snps$snps))
-unique(as.character(pos_sig_eqtl_snps$hgnc_symbol))
+# number of unique genes the SNPs sit within (note that it includes one NA)
 length(unique(as.character(pos_sig_eqtl_snps$hgnc_symbol)))
 
-# unique differentially expressed genes
-unique(pos_sig_eqtl_gns$gene_symbol)
+# number of unique differentially expressed genes (note that it includes one NA)
 length(unique(pos_sig_eqtl_gns$gene_symbol))
-
-# find any hits with the genes implicated in the 2018 study
-pos_sig_eqtl_snps[grep("PICALM|BIN1|CR1|ABCA7|MS4A6A|CLU|FERMT2|DSG2|EPHA1|SORL1|ZCWPW1", pos_sig_eqtl_snps$hgnc_symbol), ]
-pos_sig_eqtl_gns[grep("PICALM|BIN1|CR1|ABCA7|MS4A6A|CLU|FERMT2|DSG2|EPHA1|SORL1|ZCWPW1", pos_sig_eqtl_gns$hgnc_symbol), ]
 
 # create vectors of gene names for snps and differentially expressed genes
 pos_eqtl_snp_gns <- as.vector(na.omit(unique(pos_sig_eqtl_snps$hgnc_symbol)))
@@ -1420,17 +1422,20 @@ pos_eqtl_de_gns
 # find which ones are shared
 intersect(pos_eqtl_snp_gns, pos_eqtl_de_gns)
 ```
-32 SNPs in 29 unique genes (30 less NA) affecting 32 unique genes (33 less NA). None of those genes are shared. The SNPs get a hit with *EPHA1*. 
+28 SNPs in 31 unique genes (32 less NA) affecting 48 unique genes (49 less NA). None of those genes are shared.
 
 #### Pull out significant SNP-gene relationships for NEG group
 
-```{r}
+```{r, warning=F}
 # pull out eQTLs from output
 neg_eqtls <- me_neg[["all"]][["eqtls"]]
 
 # pull out significant SNP-gene relationships (FDR < 0.05)
 neg_sig_eqtls <- neg_eqtls[neg_eqtls$FDR < 0.05, ]
 dim(neg_sig_eqtls)
+head(neg_sig_eqtls)
+# number of unique SNPs
+length(unique(neg_sig_eqtls$snps))
 
 # annotate
 neg_sig_eqtl_snps <- left_join(neg_sig_eqtls, snp_gns, by = c("snps" = "refsnp_id"))
@@ -1440,22 +1445,19 @@ neg_sig_eqtl_gns <- left_join(neg_sig_eqtls, pid_all, by = c("gene" = "probe_id"
 write.table(neg_sig_eqtl_snps, "C:/Users/bre227/Documents/R/AD_project/Working/neg_eqtl_snps.txt", row.names = F, col.names = T, quote = F, sep = "\t")
 write.table(neg_sig_eqtl_gns, "C:/Users/bre227/Documents/R/AD_project/Working/neg_eqtl_gns.txt", row.names = F, col.names = T, quote = F, sep = "\t")
 
-# find any hits with the genes implicated in the 2018 study
-neg_sig_eqtl_snps[grep("PICALM|BIN1|CR1|ABCA7|MS4A6A|CLU|FERMT2|DSG2|EPHA1|SORL1|ZCWPW1", neg_sig_eqtl_snps$hgnc_symbol), ]
-neg_sig_eqtl_gns[grep("PICALM|BIN1|CR1|ABCA7|MS4A6A|CLU|FERMT2|DSG2|EPHA1|SORL1|ZCWPW1", neg_sig_eqtl_gns$hgnc_symbol), ]
-
 # create vectors of gene names for snps and differentially expressed genes
 neg_eqtl_snp_gns <- as.vector(na.omit(unique(neg_sig_eqtl_snps$hgnc_symbol)))
-neg_eqtl_snp_gns
 length(neg_eqtl_snp_gns)
+neg_eqtl_snp_gns
+
 neg_eqtl_de_gns <- as.vector(na.omit(unique(neg_sig_eqtl_gns$gene_symbol)))
-neg_eqtl_de_gns
 length(neg_eqtl_de_gns)
+neg_eqtl_de_gns
 
 # find which ones are shared
 intersect(neg_eqtl_snp_gns, neg_eqtl_de_gns)
 ```
-27 SNPs in 32 unique genes affecting the expression of 33 unique genes. None of those genes are shared. The SNPs get a hit with *ABCA7*, *CLU*, and *EPHA1*.
+35 SNPs in 34 unique genes affecting the expression of 74 unique genes. None of those genes are shared (i.e. all the SNPs are acting *cis*.
 
 #### Compare which genes are differentially expressed eQTL genes between the two groups
 
@@ -1465,8 +1467,10 @@ length(setdiff(pos_eqtl_de_gns, neg_eqtl_de_gns))
 
 setdiff(neg_eqtl_de_gns, pos_eqtl_de_gns)
 length(setdiff(neg_eqtl_de_gns, pos_eqtl_de_gns))
+
+intersect(pos_eqtl_de_gns, neg_eqtl_de_gns)
 ```
-So all differentially expressed genes in each group are unique to that group other than *EPHA1*. 
+So all differentially expressed genes in each group are unique to that group other than *ADGRG7*. 
 
 
 <!--ignore below

@@ -260,7 +260,7 @@ signif_PET_for_apoe4_no <- filter(res4, P.Value < 0.05)
 Test to see whether the number of statistically significant genes changes when we exclude the outliers (AIBL.Ids **771**, **914** and **918**)
 
 ```{r}
-exdata3 <- filter(exdata2, AIBL.Id != "771" & AIBL.Id != "914" & AIBL.Id != "918")
+exdata3 <- dplyr::filter(exdata2, AIBL.Id != "771" & AIBL.Id != "914" & AIBL.Id != "918")
 ```
 
 Run PCA
@@ -463,10 +463,10 @@ signif_all <- dplyr::select(signif_apoe4_for_PET_yes, probe_id, P.Value) %>%
   full_join(dplyr::select(signif_apoe4_for_PET_no, probe_id, P.Value), by = "probe_id") %>% 
   full_join(dplyr::select(signif_PET_for_apoe4_yes, probe_id, P.Value), by = "probe_id") %>% 
   full_join(dplyr::select(signif_PET_for_apoe4_no, probe_id, P.Value), by = "probe_id") %>% 
-  rename(P.Value.c1 = "P.Value.x", 
-         P.Value.c2 = "P.Value.y", 
-         P.Value.c3 = "P.Value.x.x", 
-         P.Value.c4 = "P.Value.y.y")
+  rename(P.Value.x = "P.Value.c1", 
+         P.Value.y = "P.Value.c2", 
+         P.Value.x.x = "P.Value.c3", 
+         P.Value.y.y = "P.Value.c4")
 
 nrow(signif_all)
 ```
