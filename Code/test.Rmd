@@ -1,39 +1,16 @@
 ---
-title: "AD project notebook"
+title: "Test"
 author: "Ian Brettell"
-output: html_notebook
+date: "25 January 2018"
+output: html_document
 ---
 
-***
+: SNP annotation
 
-### Exploratory analysis of mRNA expression data
-
-*7 December 2017*
-
-Import files
-
-```{r}
-require(RCurl)
-```
-
-
-```{r}
-exdata <- read.delim(text = getURL("AIBL_Gene_Expression.txt", sep = " ", header = T)
-metadata <- read.delim("aibl-ids-6.0.0-201712010300.txt", sep = "\t", header = T)
-ids <- read.delim("AIBL_Gene_Expression_IDs.txt", header = F)
-```
-
-
-
-
-#### Meeting with JD 20171213
-
-*Use the `limma` package to make volcano plots, for both "PET status" (yes or no) and APOE4 (yes or no)
-
-*Do all possible pairwise combinations of the above two, i.e. PET yes & APOE no, APOE yes & PET no, etc.
-
-*Screen out those that are interesting.Once we have a "top table"", pull out the top genes and go into KEGG, or write a function that finds all the other genes in the pathway for each of the genes.
-
-*Then go back and find the values for those genes - is there a reltaionship or not. 
-
-
+|               | AIBL SNPs | Proxy SNPs |
+|:-------------:|:---------:|:----------:|
+|Total genotyped| 2,084     |            |
+|No. in LD      | 1,527     |   18,118   |
+|Loci identified| 2,075     | 17,847     |
+|Genes          | 621       |  1,103     |
+|Unique genes (shared genes)| 126 (495) | 608 (495)|
