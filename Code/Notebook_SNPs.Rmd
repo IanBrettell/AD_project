@@ -1484,9 +1484,9 @@ Meeting with JD
 
 *What did JD do with the SVD? In a scree plot, the first component explains 70-80% of the variance. 
 
-*Each of the values in ll isa list of 2108 vectors, whcih is the first eigenvalue.
+*Each of the values in ll is a list of 218 vectors, whcih is the first eigenvalue.
 
-*We have 249 root genes within each cluster. The root gene is 
+*We have 249 root genes within each cluster. The root gene is the gene that was differentially expressed in the first limma.
 
 * The correlated gene is only signficiant because the correlation between local group 1 and local group 2 was signficantly different. Then we take an SVD of those genes that are signficintly different. 
 
