@@ -1472,6 +1472,42 @@ intersect(pos_eqtl_de_gns, neg_eqtl_de_gns)
 ```
 So all differentially expressed genes in each group are unique to that group other than *ADGRG7*. 
 
+***
+
+*6 February 2018*
+
+Meeting with JD
+
+*AD nature paper - blood-based biomarker that is 90% accurate for PET status. Went viral all around the world.
+
+*Track down gene map for 249/530 genes found in clusters, and match to limma outputs
+
+*What did JD do with the SVD? In a scree plot, the first component explains 70-80% of the variance. 
+
+*Each of the values in ll isa list of 2108 vectors, whcih is the first eigenvalue.
+
+*We have 249 root genes within each cluster. The root gene is 
+
+* The correlated gene is only signficiant because the correlation between local group 1 and local group 2 was signficantly different. Then we take an SVD of those genes that are signficintly different. 
+
+*Then we do that for all 249 genes, and we compare our predictions using the eigenvalues to our intiail limma results, and we can identify the genes for which using the eigenvalue has improved the prediction of AB. 
+
+* Now assess which eQTL differentially expressed genes in the AB-pos group are in the 530 diffrentially expressed limma genes, and which ones sit within the 249 genes in the clusters. And do they intercept with any of the PLINK significant SNPs? 
+
+*Get the gene names for the top 20 limma genes
+
+*FInd the genes that were acting in cis in the eQTL
+
+*Start thinking about biolgoical relationships
+
+*For presentation
+
+-design, understanding, background, results. Talk to the picture or figure. 
+
+*New indices: Inflammatory burden, and cardiovascular disease index
+
+*Look up Rothman, epidemiologist - looks at RERI, attributable proportion, and Synergy Index. All measure whether the genetic and environmental effects are additive... or multiplicative? Paper: Anderson, 'Meausres of biologicla interaction'
+
 
 <!--ignore below
 
