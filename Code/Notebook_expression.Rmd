@@ -617,7 +617,7 @@ topTable(fit4, adjust = "BH")
 ```{r}
 results_PETposvneg <- topTable(fit4, n = Inf)
 results_PETposvneg$probe_id <- rownames(results_PETposvneg)
-signif_PET_pos_v_neg <- filter(results_PETposvneg, P.Value < 0.05)
+signif_PET_pos_v_neg <- dplyr::filter(results_PETposvneg, P.Value < 0.05)
 dim(signif_PET_pos_v_neg)
 ```
 

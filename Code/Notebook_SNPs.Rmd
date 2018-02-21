@@ -1,14 +1,729 @@
 ---
-title: "R Notebook - SNP data"
+title: "R Notebook - AD Project"
 author: "Ian Brettell"
-output: html_notebook
+output:
+  html_notebook:
+    number_sections: yes
+    toc: yes
+    toc_float: yes
+  html_document:
+    df_print: paged
+    toc: yes
 ---
+
+# Expression data
+
+Initial setup:
+```{r setup, eval = FALSE, echo = F}
+install.packages("here")
+install.packages("tidyverse", dependencies = TRUE)
+install.packages("rafalib")
+install.packages("dummies")
+source("https://bioconductor.org/biocLite.R")
+biocLite("limma")
+install.packages("yaml")
+install.packages("backports")
+install.packages("reshape2")
+install.packages("viridis")
+biocLite("made4")
+install.packages("caret")
+install.packages('e1071', dependencies=TRUE)
+install.packages("ggfortify")
+install.packages("cluster")
+install.packages("factoextra")
+biocLite("Biobase")
+biocLite("limma")
+biocLite("pd.huex.1.0.st.v2")
+biocLite("huex10sttranscriptcluster.db")
+install.packages("VennDiagram")
+install.packages("Grid")
+biocLite("gage")
+biocLite("GSEABase")
+biocLite("KEGGREST")
+install.packages("rjson")
+# Note: Installing bioconductor created issues with creating the markdown preview, which appears to be fixed by installing the `yaml`, `backports` and `reshape2` packages afterwards.
+```
+
+***
+*19 December 2017*
+
+## Run analysis on expression data
+
+I was using the wrong ID data - we will run the above again substituting the correct data.
+
+### Import files
+
+```{r}
+exdata <- read.delim("C:/Users/bre227/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression.txt", sep = "", header = T)
+dim(exdata)
+head(exdata)
+metadata <- read.delim("~/R/AD_project/Data/Expression/aibl-ids-6.0.0-201712010300.txt", sep = "\t", header = T)
+dim(metadata)
+head(metadata)
+ids2 <- read.delim("C:/Users/bre227/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression_IDs_UpdtdDec2017.txt", sep = " ")
+colnames(exdata) <- as.vector(ids2$x) # replace colnames with ids2
+
+# filter for those in ids2
+metadata2 <- metadata[(metadata$AIBL.Id %in% ids2$x) & (metadata$Collection == "1"), ]
+dim(metadata2)
+```
+
+***
+
+### Tidy and combine data
+
+Load packages
+
+```{r, results = "hide"}
+library(tidyverse)
+```
+
+Add age column and apoe4 columns
+
+```{r}
+metadata2$Age <- as.numeric((as.Date(metadata2$Progress.Summary.Date.of.NP.assessment,format=c("%d/%m/%Y")))-(as.Date(paste("15",substr(metadata2$Demographic.YearMonthOfBirth,start=5,stop=6),substr(metadata2$Demographic.YearMonthOfBirth,start=1,stop=4),sep="/"),format = c("%d/%m/%Y"))))/365.25
+summary(metadata2$Age)
+```
+
+Histogram of age
+
+```{r}
+hist(metadata2$Age, xlab = "Age", main = "Distribution of AIBL sample ages")
+```
+
+```{r}
+unique(metadata2$Demographic.ApoE.genotype)
+metadata2$apoe4 <- as.factor(ifelse(metadata2$Demographic.ApoE.genotype=="E2/E2"|metadata2$Demographic.ApoE.genotype=="E3/E2"|metadata2$Demographic.ApoE.genotype=="E3/E3",0,ifelse(metadata2$Demographic.ApoE.genotype=="E4/E2"|metadata2$Demographic.ApoE.genotype=="E4/E3"|metadata2$Demographic.ApoE.genotype=="E4/E4",1,NA)))
+metadata2 %>% 
+  group_by(apoe4) %>% 
+  summarise(no_rows = length(apoe4))
+```
+
+Create binary PET status
+
+```{r}
+metadata2$PET <- as.factor(ifelse(metadata2$Image.PET.Amyloid.PIB_NAV.Status == "Positive" | metadata2$Image.PET.Amyloid.Florbetapir.Status== "Positive" | metadata2$Image.PET.Amyloid.Flutemetamol.Status == "Positive", "POS", ifelse(metadata2$Image.PET.Amyloid.PIB_NAV.Status == "Negative" | metadata2$Image.PET.Amyloid.Florbetapir.Status== "Negative" | metadata2$Image.PET.Amyloid.Flutemetamol.Status == "Negative", "NEG",NA)))
+metadata2 %>% 
+  group_by(PET) %>% 
+  summarise(no_rows = length(PET))
+```
+
+Extract metadata for columns of interest
+
+```{r}
+meta2 <- dplyr::select(metadata2, 
+                AIBL.Id,
+                Demographic.Sex,
+                PET,
+                apoe4,
+                Age)
+write.table(meta2, "C:/Users/bre227/Documents/R/AD_project/Working/key_metadata.txt", col.names = T, row.names = F, quote = F, sep = "\t")
+```
+
+
+***
+
+### Create initial exploratory plots
+
+***
+
+Plot for whole dataset
+```{r}
+exdata1 <- as_tibble(exdata)
+exdata1 <- as_tibble(t(exdata1)) # transpose to put samples in rows, genes in columns
+colnames(exdata1) <- rownames(exdata) # add genes names
+exdata1$AIBL.Id <- as.integer(colnames(exdata)) # add 'AIBL.Id' column
+exdata2 <- left_join(meta2, exdata1, by = "AIBL.Id") %>% 
+  na.omit # add metadata and remove PET and apoe4 columns with 'NA'
+rownames(exdata2) <- exdata2$AIBL.Id # to ensure the labels in the plots reflect the AIBL.Ids
+dim(exdata2)
+```
+
+Run PCA
+```{r}
+pca <- prcomp(exdata2[6:22016], center = T, scale. = T) # run PCA
+```
+
+```{r}
+plot(pca, type = "l")
+```
+
+Another, better version of the scree plot using the package `factoextra`.
+```{r}
+library(factoextra)
+fviz_eig(pca)
+```
+
+```{r}
+library(ggfortify)
+autoplot(pca, data = exdata2, colour = "PET", label = T) +
+  viridis::scale_colour_viridis(option = "viridis", discrete = T)
+```
+
+```{r}
+library(ggfortify)
+autoplot(pca, data = exdata2, colour = "apoe4", label = T)
+```
+*Consider excluding outlier individuals with AIBL.Ids 771 and 918.*
+
+```{r}
+qqnorm(pca$x[,2], pch = 20)
+```
+
+
+### Use `limma` to analyse expression data.
+
+We first create an 'ExpressionSet' with genes on rows, and samples on columns, following the guide here: <https://www.bioconductor.org/packages/3.7/bioc/vignettes/Biobase/inst/doc/ExpressionSetIntroduction.pdf>
+
+```{r, results = "hide"}
+library(Biobase)
+```
+
+```{r}
+exprs <- as.matrix(t(exdata2[,6:22016])) # leaving behind the first 5 metadata columns
+minimalSet <- ExpressionSet(assayData = exprs)
+pData <- exdata2[,1:5]
+summary(pData)
+```
+
+```{r, results = "hide"}
+library(limma)
+```
+```{r}
+PET_apoe4 <- paste(pData$PET, pData$apoe4, sep = ".") # put PET/apoe4 combinations into a vector
+PET_apoe4
+
+PET_apoe4 <- factor(PET_apoe4, levels = c(unique(PET_apoe4))) # turn it into a factor
+design <- model.matrix(~0 + PET_apoe4) # create factor table for four combinations
+colnames(design) <- levels(PET_apoe4)
+fit <- lmFit(exprs, design)
+```
+
+Set four pair-wise contrasts of interest and compute the contrasts and moderated t-tests.
+
+```{r}
+cont.matrix <- makeContrasts(apoe4_for_PET_yes = POS.1 - POS.0,
+                             apoe4_for_PET_no = NEG.1 - NEG.0,
+                             PET_for_apoe4_yes = POS.1 - NEG.1,
+                             PET_for_apoe4_no = POS.0 - NEG.0,
+                             levels = design)
+fit2 <- contrasts.fit(fit, cont.matrix)
+fit2 <- eBayes(fit2)
+```
+
+Get the genes differentially expressed in each comparison
+
+```{r}
+topTable(fit2, coef = "apoe4_for_PET_yes")
+topTable(fit2, coef = "apoe4_for_PET_no")
+topTable(fit2, coef = "PET_for_apoe4_yes")
+topTable(fit2, coef = "PET_for_apoe4_no")
+```
+There appear to be bigger differences between the expression levels of those that test positive and negative for PET than for those that have and do not have the apoe4 genes, although all are significant.
+
+```{r}
+res1 <- topTable(fit2, coef = "apoe4_for_PET_yes", n = Inf)
+res2 <- topTable(fit2, coef = "apoe4_for_PET_no", n = Inf)
+res3 <- topTable(fit2, coef = "PET_for_apoe4_yes", n = Inf)
+res4 <- topTable(fit2, coef = "PET_for_apoe4_no", n = Inf)
+
+length(which(res1$P.Value < 0.05))
+length(which(res2$P.Value < 0.05))
+length(which(res3$P.Value < 0.05))
+length(which(res4$P.Value < 0.05))
+```
+
+
+Get list of genes that show significantly different expression between contrasts
+```{r}
+signif_apoe4_for_PET_yes <- filter(res1, P.Value < 0.05)
+signif_apoe4_for_PET_no <- filter(res2, P.Value < 0.05)
+signif_PET_for_apoe4_yes <- filter(res3, P.Value < 0.05)
+signif_PET_for_apoe4_no <- filter(res4, P.Value < 0.05)
+```
+
+*20 December 2017*
+
+Test to see whether the number of statistically significant genes changes when we exclude the outliers (AIBL.Ids **771**, **914** and **918**)
+
+```{r}
+exdata3 <- dplyr::filter(exdata2, AIBL.Id != "771" & AIBL.Id != "914" & AIBL.Id != "918")
+```
+
+Run PCA
+```{r}
+pca2 <- prcomp(exdata3[6:22016], center = T, scale. = T) # run PCA
+```
+
+```{r}
+plot(pca2, type = "l")
+```
+
+```{r}
+library(factoextra)
+fviz_eig(pca2)
+```
+
+```{r}
+library(ggfortify)
+autoplot(pca2, data = exdata3, colour = "PET", label = T, label.label = "AIBL.Id") +
+  viridis::scale_colour_viridis(option = "viridis", discrete = T)
+```
+
+```{r}
+library(ggfortify)
+autoplot(pca2, data = exdata3, colour = "apoe4", label = T, label.label = "AIBL.Id")
+```
+
+```{r, results = "hide"}
+library(Biobase)
+```
+
+```{r}
+exprs <- as.matrix(t(exdata3[,6:22016])) # leaving behind the first 5 metadata columns
+minimalSet <- ExpressionSet(assayData = exprs)
+pData <- exdata3[,1:5]
+summary(pData)
+```
+
+```{r, results = "hide"}
+library(limma)
+```
+
+```{r}
+PET_apoe4 <- paste(pData$PET, pData$apoe4, sep = ".") # put PET/apoe4 combinations into a vector
+PET_apoe4
+
+PET_apoe4 <- factor(PET_apoe4, levels = c(unique(PET_apoe4))) # turn it into a factor
+design <- model.matrix(~0 + PET_apoe4) # create factor table for four combinations
+colnames(design) <- levels(PET_apoe4)
+fit <- lmFit(exprs, design)
+```
+
+Set four pair-wise contrasts of interest and compute the contrasts and moderated t-tests.
+
+```{r}
+cont.matrix <- makeContrasts(apoe4_for_PET_yes = POS.1 - POS.0,
+                             apoe4_for_PET_no = NEG.1 - NEG.0,
+                             PET_for_apoe4_yes = POS.1 - NEG.1,
+                             PET_for_apoe4_no = POS.0 - NEG.0,
+                             levels = design)
+fit2 <- contrasts.fit(fit, cont.matrix)
+fit2 <- eBayes(fit2)
+```
+
+Get the genes differentially expressed in each comparison
+
+```{r}
+topTable(fit2, coef = "apoe4_for_PET_yes")
+topTable(fit2, coef = "apoe4_for_PET_no")
+topTable(fit2, coef = "PET_for_apoe4_yes")
+topTable(fit2, coef = "PET_for_apoe4_no")
+```
+There appear to be bigger differences between the expression levels of those that test positive and negative for PET than for those that have and do not have the apoe4 genes, although all are significant.
+
+
+```{r}
+res1 <- topTable(fit2, coef = "apoe4_for_PET_yes", n = Inf)
+res2 <- topTable(fit2, coef = "apoe4_for_PET_no", n = Inf)
+res3 <- topTable(fit2, coef = "PET_for_apoe4_yes", n = Inf)
+res4 <- topTable(fit2, coef = "PET_for_apoe4_no", n = Inf)
+
+length(which(res1$P.Value < 0.05))
+length(which(res2$P.Value < 0.05))
+length(which(res3$P.Value < 0.05))
+length(which(res4$P.Value < 0.05))
+```
+
+Probe IDs are set in the 'res' data frames as rownames. Create separate column for rownames. Need to do it now, because when `filter()` is applied below, it removes the rownames.
+
+```{r}
+for (i in ls(pattern = "res")){
+  x <- get(i)
+  x$probe_id <- rownames(x)
+  assign(i, x)
+}
+```
+
+
+Get list of genes that show significantly different expression between contrasts
+```{r}
+signif_apoe4_for_PET_yes <- filter(res1, P.Value < 0.05)
+signif_apoe4_for_PET_no <- filter(res2, P.Value < 0.05)
+signif_PET_for_apoe4_yes <- filter(res3, P.Value < 0.05)
+signif_PET_for_apoe4_no <- filter(res4, P.Value < 0.05)
+
+rm(list = ls(pattern = "res")) # remove results to clear working memory
+```
+
+
+## Get gene identifiers for microarray probes and identify significant genes.
+
+*Used JD's code from 'AIBL_Gene_Expression_SetUp_Dec82017.R'*
+
+
+```{r}
+library(pd.huex.1.0.st.v2)
+library(huex10sttranscriptcluster.db)
+  
+### pull gene symbols and match to probe ids to replace rownames ###
+x <- huex10sttranscriptclusterSYMBOL
+# Get the probe identifiers that are mapped to a gene symbol
+mapped_probes <- mappedkeys(x)
+# Convert to a list
+xx <- as.list(x[mapped_probes])
+if(length(xx) > 0) {
+# Get the SYMBOL for the first five probes
+xx[1:5]
+# Get the first one
+xx[[1]]
+}
+
+xx1 <- as.matrix(unlist(xx))
+
+# Get table of probes
+gns <- rownames(exdata)
+gnsl <- xx1[rownames(xx1) %in% gns]
+length(gnsl)
+
+### Find ENSEMBL IDs ###
+x3 <- huex10sttranscriptclusterENSEMBL
+# Get the entrez gene IDs that are mapped to an Ensembl ID
+mapped_genes <- mappedkeys(x3)
+# Convert to a list
+xx3 <- as.list(x3[mapped_genes])
+
+xx3.1 <- as.matrix(unlist(xx3))
+ens <- xx3.1[rownames(xx3.1) %in% gns]
+length(ens)
+#[1] 14497
+
+### Find Entrez IDs ###
+x4 <- huex10sttranscriptclusterENTREZID
+# Get the probe identifiers that are mapped to an ENTREZ Gene ID
+mapped_probes <- mappedkeys(x4)
+# Convert to a list
+xx4 <- as.list(x4[mapped_probes])
+
+xx4.1 <- as.matrix(unlist(xx4))
+entz <- xx4.1[rownames(xx4.1) %in% gns]
+length(entz)
+    
+```
+
+
+## Match probes, gene symbols, Ensembl IDs, and Entrez IDs with the list of statistically significant genes.
+
+Create data frame of all probe matches with identifiers
+
+```{r}
+pid_symb <-  data.frame(xx1)
+pid_symb$probe_id <- rownames(pid_symb)
+
+pid_ens <- data.frame(xx3.1)
+pid_ens$probe_id <- rownames(pid_ens)
+
+pid_ent <- data.frame(xx4.1)
+pid_ent$probe_id <- rownames(pid_ent)
+
+pid_all <- left_join(pid_symb, pid_ent, by = "probe_id") %>% 
+  left_join(y = pid_ens, by = "probe_id") %>% 
+  rename(xx1 = "gene_symbol",
+         xx4.1 = "entrez_id",
+         xx3.1 = "ensembl_id") %>% 
+  dplyr::select(probe_id, everything())
+
+write.table(pid_all, "C:/Users/bre227/Documents/R/AD_project/Working/affy_probes_annotated.txt", row.names = F, col.names = T, quote = F, sep = "\t")
+
+# find how many probes are annotated
+length(which(pid_all$probe_id %in% rownames(exdata)))
+```
+
+Combine lists of significant genes for each contrast. Note that combined counts of significant genes for all four contrasts is 3030.
+
+```{r}
+signif_all <- full_join(signif_apoe4_for_PET_yes, signif_apoe4_for_PET_no, by = "probe_id") %>%
+  full_join(signif_PET_for_apoe4_no, by = "probe_id") %>% 
+  full_join(signif_apoe4_for_PET_yes, by = "probe_id")
+
+signif_all <- dplyr::select(signif_apoe4_for_PET_yes, probe_id, P.Value) %>% 
+  full_join(dplyr::select(signif_apoe4_for_PET_no, probe_id, P.Value), by = "probe_id") %>% 
+  full_join(dplyr::select(signif_PET_for_apoe4_yes, probe_id, P.Value), by = "probe_id") %>% 
+  full_join(dplyr::select(signif_PET_for_apoe4_no, probe_id, P.Value), by = "probe_id") %>% 
+  rename(P.Value.x = "P.Value.c1", 
+         P.Value.y = "P.Value.c2", 
+         P.Value.x.x = "P.Value.c3", 
+         P.Value.y.y = "P.Value.c4")
+
+nrow(signif_all)
+```
+Therefore 2438 genes are expressed differentially across at least two contrasts
+
+
+Bind gene ids to 'signif_all'
+```{r}
+sig_all2 <- left_join(signif_all, pid_all, by = "probe_id")
+```
+There are many NAs in the 'gene_symbol' column, even though there are 34,127 unique probe_ids in 'pid_symb' - one would think they would all be accounted for.
+
+```{r}
+length(setdiff(signif_all$probe_id, pid_all$probe_id))
+```
+Shows that there are 1000 probe ids in 'signif_all' that are not in 'pid_all', i.e. they do not have any annotation data.
+
+Confirmed by:
+```{r}
+length(which(signif_all$probe_id %in% pid_all$probe_id == "TRUE"))
+```
+
+So are all probe_ids in the expression data in 'pid_symb'?
+
+```{r}
+length(setdiff(rownames(exdata), pid_symb$probe_id))
+```
+7,186/22,011 probes are not accounted for in the annotation data?
+
+Confirm this:
+
+```{r}
+length(which(rownames(exdata) %in% pid_all$probe_id == "TRUE"))
+```
+
+
+*Ask JD about this ^^*
+
+## Make Venn diagram of overlapping genes
+
+```{r}
+library(VennDiagram)
+grid.newpage()
+venn <- draw.quad.venn(area1 = length(which(!is.na(sig_all2$P.Value.c1))),
+               area2 = length(which(!is.na(sig_all2$P.Value.c2))),
+               area3 = length(which(!is.na(sig_all2$P.Value.c3))),
+               area4 = length(which(!is.na(sig_all2$P.Value.c4))),
+               n12 = length(which(!is.na(sig_all2$P.Value.c1) & !is.na(sig_all2$P.Value.c2))),
+               n13 = length(which(!is.na(sig_all2$P.Value.c1) & !is.na(sig_all2$P.Value.c3))),
+               n14 = length(which(!is.na(sig_all2$P.Value.c1) & !is.na(sig_all2$P.Value.c4))),
+               n23 = length(which(!is.na(sig_all2$P.Value.c2) & !is.na(sig_all2$P.Value.c3))),
+               n24 = length(which(!is.na(sig_all2$P.Value.c2) & !is.na(sig_all2$P.Value.c4))),
+               n34 = length(which(!is.na(sig_all2$P.Value.c3) & !is.na(sig_all2$P.Value.c4))),
+               n123 = length(which(!is.na(sig_all2$P.Value.c1) & !is.na(sig_all2$P.Value.c2) & !is.na(sig_all2$P.Value.c3))),
+               n124 = length(which(!is.na(sig_all2$P.Value.c1) & !is.na(sig_all2$P.Value.c2) & !is.na(sig_all2$P.Value.c4))),
+               n134 = length(which(!is.na(sig_all2$P.Value.c1) & !is.na(sig_all2$P.Value.c3) & !is.na(sig_all2$P.Value.c4))),
+               n234 = length(which(!is.na(sig_all2$P.Value.c2) & !is.na(sig_all2$P.Value.c3) & !is.na(sig_all2$P.Value.c4))), 
+               n1234 = length(which(!is.na(sig_all2$P.Value.c1) & !is.na(sig_all2$P.Value.c2) & !is.na(sig_all2$P.Value.c3) & !is.na(sig_all2$P.Value.c4))),
+               category = c("apoe4_for_PET_yes", "apoe4_for_PET_no", "PET_for_apoe4_yes", "PET_for_apoe4_no"),
+               cat.pos = c(0, 0, 0, 0))
+
+```
+Many of the same genes (265) are differentially expressed between:
+*PET pos/neg when they have the apoe4 allele; and
+*apoe4 yes/no when they are negative for PET
+
+^ These must be genes that can protect against AD.
+
+Many of the same genes (189) are also differentially expressed between:
+*PET pos/neg when they do not have the apoe4 allele; and
+*apoe4 yes/no when they are positive for PET 
+
+^ These latter genes must be acting independently of the apoe4 network to cause AD.
+
+Find out how many people are in each group:
+
+```{r}
+test <- exdata3[,1:5]
+length(which(test$PET == "POS" & test$apoe4 == "1"))
+length(which(test$PET == "POS" & test$apoe4 == "0"))
+length(which(test$PET == "NEG" & test$apoe4 == "1"))
+length(which(test$PET == "NEG" & test$apoe4 == "0"))
+```
+This suggests that more people tend to either have apoe4 and AD, or not have apoe4 and not have AD, than otherwise.
+
+***
+
+*21 December 2017*
+
+We have carried out pairwise contrasts for PET and apoe4, but we haven't yet compared PET-pos v PET-neg. We'll do that now.
+
+Create design matrix
+
+```{r}
+Group <- factor(exdata3$PET, levels = c("POS", "NEG"))
+design2 <- model.matrix(~0 + Group)
+colnames(design2) <- c("POS", "NEG")
+```
+
+
+Find differentially expressed genes
+```{r}
+fit3 <- lmFit(exprs, design2)
+cont.matrix2 <- makeContrasts(POSvsNEG = POS - NEG, levels = design2)
+fit4 <- contrasts.fit(fit3, cont.matrix2)
+fit4 <- eBayes(fit4)
+topTable(fit4, adjust = "BH")
+```
+
+```{r}
+results_PETposvneg <- topTable(fit4, n = Inf)
+results_PETposvneg$probe_id <- rownames(results_PETposvneg)
+signif_PET_pos_v_neg <- dplyr::filter(results_PETposvneg, P.Value < 0.05)
+dim(signif_PET_pos_v_neg)
+```
+
+Now for apoe4
+```{r}
+Group <- factor(exdata3$apoe4, levels = c(0, 1))
+design3 <- model.matrix(~0 + Group)
+colnames(design3) <- c("NEG", "POS")
+```
+
+
+Find differentially expressed genes
+```{r}
+fit5 <- lmFit(exprs, design3)
+cont.matrix3 <- makeContrasts(apoe4 = NEG - POS, levels = design3)
+fit6 <- contrasts.fit(fit5, cont.matrix3)
+fit6 <- eBayes(fit6)
+topTable(fit6, adjust = "BH")
+```
+```{r}
+results_apoe4posvneg <- topTable(fit6, n = Inf)
+results_apoe4posvneg$probe_id <- rownames(results_apoe4posvneg)
+signif_apoe4_pos_v_neg <- filter(results_apoe4posvneg, P.Value < 0.05)
+dim(signif_apoe4_pos_v_neg)
+```
+
+Create table of all significant differentially expressed genes
+```{r}
+sig_direct_pairs <- full_join(
+  dplyr::select(signif_PET_pos_v_neg, P.Value, probe_id),
+  dplyr::select(signif_apoe4_pos_v_neg, P.Value, probe_id), 
+  by = "probe_id") %>% 
+  dplyr::select(probe_id, everything())
+colnames(sig_direct_pairs)[2] <- "P.Value_PET"
+colnames(sig_direct_pairs)[3] <- "P.Value_apoe4"
+```
+
+```{r}
+library(VennDiagram)
+grid.newpage()
+venn2 <- draw.pairwise.venn(
+  area1 = length(which(!is.na(sig_direct_pairs$P.Value_PET))),
+  area2 = length(which(!is.na(sig_direct_pairs$P.Value_apoe4))),
+  cross.area = length(which(!is.na(sig_direct_pairs$P.Value_PET) & !is.na(sig_direct_pairs$P.Value_apoe4))),
+  category = c("PET_pos_v_neg", "apoe4_pos_v_neg"),
+  ext.text = FALSE, cat.prompts = T, cat.pos = 0)
+```
+
+***
+
+## Get KEGG results for PET yes/no genes
+
+Attach gene data to PET 
+```{r}
+library(tidyverse)
+sig_PET_pos_v_neg <- left_join(signif_PET_pos_v_neg, pid_all, by = "probe_id")
+length(which(!is.na(sig_PET_pos_v_neg$gene_symbol))) # to get number of genes with gene IDs
+```
+
+Following the vignette for the `gage` package, we create vectors of samples for PET pos and neg conditions
+```{r}
+library(gage)
+pet_pos <- meta2$AIBL.Id[meta2$PET == "POS" & !is.na(meta2$PET)]
+pet_neg <- meta2$AIBL.Id[meta2$PET == "NEG" & !is.na(meta2$PET)]
+```
+
+Create a matrix of 'exdata' only for probes that were significant and have gene_symbols (i.e. were identified)
+
+```{r}
+sig_probes <- sig_PET_pos_v_neg[!is.na(sig_PET_pos_v_neg$gene_symbol), 7:8]
+data <- exdata[rownames(exdata) %in% sig_probes$probe_id, ]
+data$probe_id <- rownames(data)
+data <- dplyr::left_join(data, sig_probes, by = "probe_id")
+rownames(data) <- data$gene_symbol
+data$probe_id <- NULL # remove redundant columns
+data$gene_symbol <- NULL
+data <- data[, colnames(data) %in% exdata3$AIBL.Id] #removing NAs and outliers
+data <- as.matrix(data)
+str(data)
+```
+
+Create gene set input data based on significant genes found in the PET pos v neg contrast, and which also had identifiers
+
+```{r}
+library(GSEABase)
+# With gene set identifier and description
+gns <- as.vector(sig_PET_pos_v_neg$gene_symbol[!is.na(sig_PET_pos_v_neg$gene_symbol)])
+gns1 <- GeneSet(gns, geneIdType = SymbolIdentifier(), setName = "PET_pos_v_neg")
+```
+
+
+*8 January 2017*
+
+Before embarking on analysis using gage, we want to classify the significant genes into gene sets. First we attempt this using the g:GOSt function on the g:Profiler website (<https://biit.cs.ut.ee/gprofiler/>)
+
+```{r}
+write.table(sig_PET_pos_v_neg$gene_symbol[!is.na(sig_PET_pos_v_neg$gene_symbol)], "C:/Users/bre227/Documents/R/AD_project/Working/sig_PET_pos_v_neg_genes.txt",
+            quote = F,
+            col.names = F,
+            row.names = F)
+```
+
+
+**Note**: According to JD, this step should be saved for later. We will therefore attach write the table of 'sig_PET_pos_v_neg' to save us having to run the entire script at startup every day. 
+
+```{r write table of DE genes bewteen PET-pos and -neg}
+write.table(sig_PET_pos_v_neg,
+            "C:/Users/bre227/Documents/R/AD_project/Working/sig_PET_pos_v_neg.txt",
+            sep = "\t")
+```
+
+***
+
+*9 January 2018* 
+
+### Meeting with JD
+
+MolsigDB - database for gene sets applicable for different diseases.
+
+Do correlation analysis on gene set.
+
+Do Chi square on outcome and SNP.
+
+* First take the AIBL SNPs, and find the other SNPs with which they are in LD. (Done)
+
+* Second, record the genotypes of those SNPs, and use them to infer the genotypes of the SNPs with which they are in LD.
+
+* Third, for each AIBL SNP, perform a linear model - lm(expression ~ rs#...), and lm(expression ~ rs#... + age, gender, apoe4)
+
+* Fourth, perform Chisquares for each rs#... and PET status
+
+  + 2000 AIBL SNPs -> chisquare L1
+  + 18,000 LD SNPs -> chisquare L2
++ **L1 + L2**
+
+### Return to KEGG
+
+To find the gene sets in which our significant genes lie, we can use the KEGG database, using KEGGREST (guide here: <http://bioconductor.org/packages/release/bioc/vignettes/KEGGREST/inst/doc/KEGGREST-vignette.html>.
+
+```{r}
+sig_PET_pos_v_neg <- read.table("C:/Users/bre227/Documents/R/AD_project/Working/sig_PET_pos_v_neg.txt",
+                                header = T)
+library(KEGGREST)
+g <- as.character(sig_PET_pos_v_neg$gene_symbol[!is.na(sig_PET_pos_v_neg$gene_symbol)]) # create vector of gene names (530 unique genes in total)
+kegids <- sapply(g, function(x){
+  keggFind("hsa", x)})
+# save to file to prevent having to run the above each time, because it is time-consuming
+save(kegids, file = "C:/Users/bre227/Documents/R/AD_project/Working/kegids.RData")
+```
+
+# SNP data
 
 *8 December 2017*
 
 Purpose: To determine whether the SNPs that are in LD with those targeted fall within (or without) the same genes
 
-Initial setup
+## Initial setup
 
 ```{r, eval = FALSE}
 
@@ -31,8 +746,9 @@ biocLite("snpStats")
 install.packages("MatrixEQTL")
 ```
 
+***
 
-## 1.1 Import files
+## Import files
 
 ```{r}
 aibl_snps <- read.delim("C:/Users/bre227/Dropbox/eQTL/Data/Expanded SNP set/AIBLgene_SNP_LIST_04032015.tsv")
@@ -40,7 +756,9 @@ snap_edit <- read.delim("C:/Users/bre227/Dropbox/eQTL/Data/Expanded SNP set/snap
 snap <- read.delim("C:/Users/bre227/Dropbox/eQTL/Data/Expanded SNP set/snapResults.txt")
 ```
 
-## 1.2 Combine datasets
+***
+
+## Combine datasets
 
 Note: 'snap_edit' has removed all SNPs from 'snap' that did not have proxies.
 
@@ -66,9 +784,11 @@ rm(AIBLdummy) # remove dummy
 snap2 <- dplyr::select(snap2, SNP, SNP_gene = "GENE", dplyr::everything())# reorder columns
 ```
 
-*19 December 2017*
+***
 
-## 1.3 Get gene names and locations for AIBL_snps
+## Get gene names and locations for AIBL_snps
+
+*19 December 2017*
 
 Create vector of aibl_snps
 
@@ -126,18 +846,6 @@ Bind both tables by ensembl_id to give full table of genes associated with the A
 SNP_genes_full <- left_join(SNP_genes, ensembl_genes, by = c("ensembl_gene_stable_id" = "ensembl_gene_id"))
 ```
 
-<!---
-This tests whether we can remove the rows that returned "LRG..." in the 'ensemble_gene_stable_id' column without losing any information.
-```{r}
-test <- SNP_genes_full[grep("LRG", SNP_genes_full$ensembl_gene_stable_id), ] # creates data frame with just "LRG" rows (161 rows total)
-test2 <- SNP_genes_full[-grep("LRG", SNP_genes_full$ensembl_gene_stable_id), ] # creates data frame with no "LRG" rows
-setdiff(test$refsnp_id, test2$refsnp_id) # tests whether there are any differences between the refsnp_ids of 'test' and 'test2' (that is, if there are differences, the "LRG" rows would not be duplicates). Returns 'character(0)'
-which((test$refsnp_id %in% test2$refsnp_id) == "FALSE") # just to make sure, we test again whether there were any non-matches. Returns 'integer(0), i.e. all refsnp_ids are in both 'test' and 'test2'.
-rm(test)
-rm(test2)
-```
---->
-
 Remove duplicate rows with "LRG..." in the 'ensembl_gene_stable_id' column
 
 ```{r}
@@ -158,8 +866,7 @@ SNP_genes_full$hgnc_symbol[SNP_genes_full$hgnc_symbol == ""] <- NA # replace bla
 write.table(SNP_genes_full, "C:/Users/bre227/Documents/R/AD_project/Working/aibl_snp_genes.txt", sep = "\t", col.names = T, row.names = F, quote = F)
 ```
 
-
-## 1.4 Get gene names and locations for proxy snps
+## Get gene names and locations for proxy snps
 
 Create vector of proxy snps
 
@@ -188,18 +895,6 @@ See how many SNPs returned results loci information
 ```{r}
 length(unique(proxy_genes$refsnp_id))
 ```
-
-
-<!-- Again, testing whether we can remove the rows that returned "LRG..." in the 'ensemble_gene_stable_id' column without losing any information.
-```{r}
-test <- proxy_genes[grep("LRG", proxy_genes$ensembl_gene_stable_id), ] # creates data frame with just "LRG" rows (161 rows total)
-test2 <- proxy_genes[-grep("LRG", proxy_genes$ensembl_gene_stable_id), ] # creates data frame with no "LRG" rows
-setdiff(test$refsnp_id, test2$refsnp_id) # tests whether there are any differences between the refsnp_ids of 'test' and 'test2' (that is, if there are differences, the "LRG" rows would not be duplicates). Returns 'character(0)'
-which((test$refsnp_id %in% test2$refsnp_id) == "FALSE") # just to make sure, we test again whether there were any non-matches. Returns 'integer(0), i.e. all refsnp_ids are in both 'test' and 'test2'.
-rm(test)
-rm(test2)
-```
---->
 
 Remove rows with "LRG" in 'ensemble_gene_stable_id'
 
@@ -326,7 +1021,7 @@ This suggests that the best approach would be to integrate the two methods (biom
 
 *8 January 2018*
 
-### Read in genotype data
+## Read in genotype data
 
 ```{r}
 library(readxl)
@@ -395,82 +1090,6 @@ write.table(gts, file = "C:/Users/bre227/Documents/R/AD_project/Working/genotype
 ## Reformat data to PED and MAP for analysis
 
 In accordance with the guide here: <http://zzz.bwh.harvard.edu/plink/data.shtml>
-
-<!--
-Import data and create map file
-```{r}
-ped <- read.table("C:/Users/bre227/Documents/R/AD_project/Working/genotype_data.txt", header = T)
-map <- data.frame(ped[, 1:4], stringsAsFactors = F)
-map <- dplyr::select(map, chromosome, snp, position)
-map$chromosome <- as.character(map$chromosome)
-map$snp <- as.character(map$snp)
-# check that there are no unexpected values
-unique(map$chromosome)
-# noticed that there is an empty row - remove from map and ped file
-map <- map[-which(is.na(map$chromosome)), ]
-ped <- ped[-which(is.na(ped$chromosome)), ]
-# replace chr "X" with "23" as required by format
-map$chromosome[map$chromosome == "X"] <- "23"
-```
-
-Find duplicated SNP entries in the PED and determine whether all the genotype data is also duplicated (in which case we can delete).
-```{r}
-length(unique(map$snp)) # only 2,088 out of 2,150 SNPs are unique?
-# get duplicated rs IDs from MAP file
-map$snp[which(duplicated(map$snp))]
-# create new data frame with genotype data from PED file matching those rs IDs
-dupe <- ped[ped$snp %in% map$snp[which(duplicated(map$snp))], ]
-
-# By visualising them, we see that an individual's entries for the duplicated SNP can be different. JD suggested to remove them all.
-
-map <- map[!map$snp %in% dupe$snp, ] # remove from map
-ped <- ped[!ped$snp %in% dupe$snp, ] # remove from ped
-```
-
-Write map file
-```{r}
-map <- data.frame(lapply(map, function(x){
-  gsub(" ", "", x)
-}), stringsAsFactors = F)
-write.table(map, "C:/Users/bre227/Documents/R/AD_project/Working/snp_data.map", row.names = F, col.names = F, quote = F, sep = "\t")
-```
-
-Reformat ped into PED format
-```{r}
-ped2 <- ped[, -c(1:4)] # remove extraneous columns
-meta <- read.table("C:/Users/bre227/Documents/R/AD_project/Working/key_metadata.txt", header = T) # read in metadata
-colnames(ped2) <- gsub("X", "", colnames(ped2)) # remove "X" from colnames
-ped2 <- data.frame(t(ped2), stringsAsFactors = F) # transpose ped2
-ped2$AIBL.Id <- rownames(ped2) # make a new column with the row names (AIBL Ids) to use to bind with metadata
-meta$AIBL.Id <- as.character(meta$AIBL.Id) # convert to characters to allow binding
-library(dplyr)
-ped2 <- left_join(ped2, meta, by = "AIBL.Id")
-ped3 <- select(ped2, AIBL.Id, Demographic.Sex, PET, everything())
-ped3[, grep("Age|apoe4", colnames(ped3), ignore.case = T)] <- NULL # remove Age and apoe4 columns
-
-
-# convert male/female to 1/2
-ped3$Demographic.Sex <- as.character(ped3$Demographic.Sex)
-ped3$Demographic.Sex[ped3$Demographic.Sex == "Male"] <- "1"
-ped3$Demographic.Sex[ped3$Demographic.Sex == "Female"] <- "2"
-
-# convert PET status from POS/NEG to 1/0
-ped3$PET <- as.character(ped3$PET)
-ped3$PET[ped3$PET == "POS"] <- "2"
-ped3$PET[ped3$PET == "NEG"] <- "1"
-ped3$PET[is.na(ped3$PET)] <- "0"
-
-# clean data
-ped4 <- data.frame(lapply(ped3, function(x){
-  gsub(" ", "", x)
-  gsub("_", " ", x)
-}), stringsAsFactors = F)
-ped4[is.na(ped4)] <- "0 0"
-
-# write file
-write.table(ped4, "C:/Users/bre227/Documents/R/AD_project/Working/snp_data.ped", row.names = F, col.names = F, quote = F, sep = "\t")
-```
--->
 
 *15 January 2018*
 
@@ -646,49 +1265,6 @@ sig_pk$hgnc_symbol <- as.character(sig_pk$hgnc_symbol)
 length(unique(sig_pk$ensembl_id))
 ```
 
-*16 January 2018*
-
-<!--
-See if we can get more annotation information by using the locations of the SNPs to get the gene names, rather than the ensembl IDs.
-
-```{r}
-library(GenomicRanges)
-# include "chr" prefix before each chromosome name
-cnv <- SNP_genes
-cnv$chr_name <- paste("chr", cnv$chr_name, sep = "")
-
-# make GRanges object for SNPs
-cnv1 <- makeGRangesFromDataFrame(cnv,
-                                keep.extra.columns = F,
-                                seqnames.field = "chr_name",
-                                start.field = "chrom_start",
-                                end.field = "chrom_end")
-
-# create function to match overlaps
-#splitColumnByOverlap <- function(query, subject, column = "ENTREZID", ...){
-#    olaps <- findOverlaps(query, subject, ...)
-#    f1 <- factor(subjectHits(olaps),
-#                 levels=seq_len(subjectLength(olaps)))
-#    splitAsList(mcols(query)[[column]][queryHits(olaps)], f1)
-#}
-
-# load library
-library(Homo.sapiens)
-gns <- genes(Homo.sapiens, columns = c("ENTREZID", "SYMBOL", "ENSEMBL"))
-head(gns)
-
-# run function
-ols <- findOverlaps(gns, cnv1, select = "all")
-ols
-unique(queryHits(ols)) # only returns hits for 227 SNPs??
-
-ols1 <- subsetByOverlaps(gns, cnv1)
-ols1 # confirmed?
-
-ols2 <- data.frame(ols1)
-
-```
--->
 
 *17 January 2018*
 
@@ -781,8 +1357,7 @@ intersect(sig_snps_log$SNP, sig_pk$SNP)
 intersect(sig_snps_log$hgnc_symbol, sig_pk$hgnc_symbol)
 ```
 
-
-# **NOTE** redo association test with permutation before binding the sig_snps_log to the assoc output
+**NOTE** redo association test with permutation before binding the sig_snps_log to the assoc output
 
 *18 January 2018*
 
@@ -1474,6 +2049,39 @@ So all differentially expressed genes in each group are unique to that group oth
 
 ***
 
+## Summary tables
+
+: SNP annotation
+
+|                           | AIBL SNPs | Proxy SNPs |
+|:--------------------------|:---------:|:----------:|
+|Total genotyped            | `r length(unique(aibl_snps$SNP))`     |            |
+|No. in LD                  | 1,527     |   18,118   |
+|Loci identified            | `r length(unique(SNP_genes$refsnp_id))`     | 17,847     |
+|Genes                      | 621       |  1,103     |
+|Unique genes (shared genes)| 127 (494) | 609 (494)|
+
+: PLINK association analysis
+
+|       | No. significant SNPs (p < 0.05) | Adjusted for multiple testing | No. genes mapped to the significant SNPs|
+|:--------------------------|:----------------:|:---------------------:|:---------------:|
+|Association (chi square, Fisher exact)| `r length(unique(sig_pk$SNP))`| `r nrow(perm[which(perm$EMP2 < 0.05), ])` (from 10,000 permutations) | `r length(as.vector(na.omit(unique(sig_pk$hgnc_symbol))))`|
+|Logistic regression with covariates | `r length(unique(sig_snp_symb$SNP))`| `r nrow(log_adj[log_adj$FDR_BH < 0.05, ])` (< 0.05 FDR-adjusted) | `r length(unique(sig_snp_symb$hgnc_symbol)) ` |
+|Intersection between above analyses | `r length(intersect(sig_snps_log$SNP, sig_pk$SNP))` | N/A | `r length(intersect(sig_snps_log$hgnc_symbol, sig_pk$hgnc_symbol))` |
+
+: eQTL analysis
+
+|   | No. significant SNPs (p < 0.05 FDR-adjusted) | No. differentially expressed genes| No. of SNPs acting in *cis*|
+|:----------------|:--------------------:|:---------------------------------:|:----------------------------:|
+|Total cohort     | `r length(unique(sig_eqtls$snps))` SNPs mapped to `r length(eqtl_snp_gns)` genes | `r length(eqtl_de_gns)`| `r length(intersect(eqtl_snp_gns, eqtl_de_gns))`|
+|AB-pos only      | `r length(unique(pos_sig_eqtl_snps$snps))` SNPs mapped to `r length(pos_eqtl_snp_gns)` genes | `r length(pos_eqtl_de_gns)`| 0|
+|AB-neg only      | `r length(unique(neg_sig_eqtls$snps))` SNPs mapped to `r length(neg_eqtl_snp_gns)` genes | `r length(neg_eqtl_de_gns)`| 0|
+
+All differentially expressed genes in the AB-pos and -neg groups were unique to that group other than *EPHA1*. 
+
+
+***
+
 *6 February 2018*
 
 Meeting with JD
@@ -1484,13 +2092,13 @@ Meeting with JD
 
 *What did JD do with the SVD? In a scree plot, the first component explains 70-80% of the variance. 
 
-*Each of the values in ll isa list of 2108 vectors, whcih is the first eigenvalue.
+*Each of the values in ll isa list of 218 vectors, which is the first eigenvalue.
 
-*We have 249 root genes within each cluster. The root gene is 
+*We have 249 root genes within each cluster.
 
-* The correlated gene is only signficiant because the correlation between local group 1 and local group 2 was signficantly different. Then we take an SVD of those genes that are signficintly different. 
+* The correlated gene is only signficiant because the correlation between local group 1 and local group 2 was signficantly different. Then we take an SVD of those genes that are significantly different. 
 
-*Then we do that for all 249 genes, and we compare our predictions using the eigenvalues to our intiail limma results, and we can identify the genes for which using the eigenvalue has improved the prediction of AB. 
+*Then we do that for all 249 genes, and we compare our predictions using the eigenvalues to our initial limma results, and we can identify the genes for which using the eigenvalue has improved the prediction of AB. 
 
 * Now assess which eQTL differentially expressed genes in the AB-pos group are in the 530 diffrentially expressed limma genes, and which ones sit within the 249 genes in the clusters. And do they intercept with any of the PLINK significant SNPs? 
 
@@ -1508,137 +2116,987 @@ Meeting with JD
 
 *Look up Rothman, epidemiologist - looks at RERI, attributable proportion, and Synergy Index. All measure whether the genetic and environmental effects are additive... or multiplicative? Paper: Anderson, 'Meausres of biologicla interaction'
 
+***
 
-<!--ignore below
 
-## 1.3 Get annotation for proxy SNPs
 
-Create vector with unique SNPs
+# END analysis
 
-```{r}
-uq_proxies <- as.vector(unique(snap$Proxy)) 
-```
+Use JD's code to compare the Enriched Network Decomposition (END) p-values with the p-values of the limma results from the raw expression data.
 
-Access SNP mart
+We'll first compare the limma results using the END carried out on *all* the genes in each network, even though most genes in each network weren't found to be differentially expressed in the initial analysis.
 
-```{r}
-library(biomaRt)
-listMarts() # lists marts available
-mart <- useMart('ENSEMBL_MART_SNP')
-listDatasets(mart) # lists datasets available
-mart <- useMart('ENSEMBL_MART_SNP', 'hsapiens_snp')
-```
+Then we'll do the same for just the genes in the clusters that were found to be DE in the intial analysis, and see if it improves prediction.
 
-Get loci for SNPs
+## END for all genes in networks
+
+Get END eigenvalues from 'cluster_genexp'
 
 ```{r}
-proxy_loci <- getBM(attributes = c("refsnp_id", "chr_name", "chrom_start", "chrom_end"),
-                    filters = c("snp_filter"),
-                    values = c(uq_proxies),
-                    mart = mart)
+require(limma)
+load("C:/Users/bre227/Dropbox/eQTL/Results/cluster_data/gene_clusters_expression.RData")
+ll <- lapply(cluster_genexp, function (x) {
+  xm <- as.matrix(log(x[,-1])) # creates a matrix, using log to standardise
+  svd.decomp2 <- svd(xm) # applies singular value decomposition
+  svd.v <- svd.decomp2$v # pulls out the matrix whose columns contain the right singular vectors of xm
+  X.pca <- xm %*% svd.v # multiplies the original 'xm' matrix by the right singular vectors matrix
+  xout <-  X.pca[,1] # takes the first eigemvalue for each individual
+  return(xout)
+})
+```
+
+Now each of the elements in the 'll' list is a vector of 218 eigenvalues (one for each individual). Each element corresponds to one of the 244 networks.
+
+Turn it into a data frame
+
+```{r}
+lld <- do.call(rbind.data.frame,ll) # creates a data frame of eigenvalues
+lld2 <- t(lld) # transpose so that individuals are rows
+rownames(lld2) <- cluster_genexp[[1]][,1]
+colnames(lld2) <- names(cluster_genexp)
+```
+
+Add metadata and gene/cluster annotation info
+```{r}
+genemap <- read.csv("C:/Users/bre227/Dropbox/eQTL/Results/cluster_data/gene_clusters_hsa_map.csv") # note that 5 networks are missing from 'cluster_genexp' - why?
+keymeta <- read.table("C:/Users/bre227/Documents/R/AD_project/Working/key_metadata.txt", header = T)
+
+# number of unique networks
+length(unique(genemap$hsa))
+
+# nubmer of unique root probe IDs
+length(unique(genemap$root_gene_probe_id))
+```
+
+```{r}
+lld3 <- lld2[as.character(keymeta$AIBL.Id),] # put eigenvalue data in same order as keymeta
+kp <- ifelse(is.na(keymeta$PET)==T,FALSE,TRUE) # create vector of TRUE/FALSE for recorded PET status, to determine which ones are missing
+keymeta1 <- keymeta[kp,] # restrict metadata for just those with recorded PET status
+keymeta1 <- keymeta1[-c(grep(c("771|914|918"), keymeta1$AIBL.Id)), ] # remove outliers idenfitied with PCA on expression data
+
+Y1 <- factor(as.character(keymeta1$PET)) # create factor vector, where NEG = 1, POS = 2
+lld4 <- lld3[kp,] # remove individuals that do not have PET status recorded
+lld4 <- lld4[-c(grep(c("771|914|918"), rownames(lld4))), ] # remove outliers identified with PCA on expression data
+treat1<-factor(c(Y1), labels=c("Normal","Alzheimers")) # create vector of factors
+design_treat1<-model.matrix(~0+treat1) # create model matrix
+colnames(design_treat1) <- c("Normal","Alzheimers")
+contrast.matrix_treat1<-makeContrasts(Normal-Alzheimers, levels=design_treat1) # create contrast
+```
+
+Visualise eigenvalues to see if they separate the groups
+
+```{r, message = F}
+require(tidyverse)
+lld4.1 <- data.frame(lld4)
+lld4.1$AIBL.Id <- as.integer(rownames(lld4.1))
+vis <- left_join(lld4.1, keymeta1, by = "AIBL.Id")
+vis <- gather(vis, key = "network", value = "eigenvalue", 1:244)
+ggplot(vis, aes(network, eigenvalue, colour = PET)) +
+  geom_jitter() # most networks seeem to have a pretty even distribution between POS and NEG groups
+```
+
+Run limma
+
+```{r}
+# Transpose data into matrix for limma fit
+x1 <- t(lld4)
+fit.lm1<-lmFit(x1,design_treat1) # fit a linear model using the matrix x1 from above
+fit1.c <-contrasts.fit(fit.lm1,contrast.matrix_treat1) # use contrasts made above
+fit.eb1<- eBayes(fit1.c) # compute Bayes statistics
+
+## comparison treated - untreated
+topALL1<-toptable(fit=fit1.c, eb=fit.eb1, adjust="fdr", n=244, genelist=colnames(lld4))
+topALL.1 <- topALL1[,c("ID","P.Value", "adj.P.Val")]
+```
+
+Merge in gene annotation data
+
+```{r}
+names(genemap)[1]="ID"
+res.NetW <- merge(topALL.1,genemap,by.id="ID")
+```
+
+Create vector of unique significant genes in 'cluster_genexp' and annotate with p-values from original limma
+
+```{r}
+# create vector of all probe IDs that sit within clusters
+clst_gns <- lapply(cluster_genexp, function (x) {
+  names(x)[-1]
+})
+
+# take only unique probe IDs and remove "X" prefix
+clst_gns_1 <- unique(as.character(unlist(clst_gns)))
+clst_gns_1 <- gsub("X", "", clst_gns_1)
+length(clst_gns_1)
+
+# create data frame of probe IDs that sit within clusters, with their associated outputs from the original limma
+lim1_out <- results_PETposvneg[results_PETposvneg$probe_id %in% clst_gns_1, ]
+nrow(lim1_out)
+```
+So `r nrow(lim1_out)` unique probe IDs sit within the clusters.
+
+Get p-values from original limma for all root genes
+```{r}
+root_lim <- results_PETposvneg[results_PETposvneg$probe_id %in% genemap$root_gene_probe_id, ] # take the expression data for root genes
+root_lim <- dplyr::select(root_lim, root_probe_id = "probe_id", root_de_p.value = "P.Value", root_de_p.value_adj = "adj.P.Val") # select and rename columns of interest
+
+# convert root_gene_probe_id to character for merging
+genemap$root_gene_probe_id <- as.character(genemap$root_gene_probe_id)
+
+# create consolidated table with initial limma results ("root_de_p.value"), cluster info, and END cluster limma results ("end_cluster_p.value")
+root_lim <- dplyr::left_join(root_lim, 
+                             dplyr::select(genemap, 
+                                           root_probe_id = "root_gene_probe_id", 
+                                           root_gene_symbol, 
+                                           cluster_id = "hsa", 
+                                           cluster_name = "name"),
+                             by = "root_probe_id") %>% 
+  left_join(dplyr::select(topALL1,
+                          cluster_id = "ID",
+                          end_cluster_p.value = "P.Value",
+                          end_cluster_p.value_adj = "adj.P.Val"),
+            by = "cluster_id")
+
+# for how many networks does the END limma have a lower p-value than the limma on the root gene?
+length(which(root_lim$end_cluster_p.value < root_lim$root_de_p.value))
+```
+So for `r length(which(root_lim$end_cluster_p.value < root_lim$root_de_p.value))` networks, the p-value from the limma on the END was lower than the p-value for the differential expression of the network's root gene alone.
+
+*8 February 2018*
+
+## END using just the differentially expressed genes in networks
+
+Many of the genes in the cluster_genexp data set weren't differentially expressed in the inital limma. Let's filter these and then run the END on that reduced set.
+
+```{r}
+lim1_out_sig <- dplyr::filter(lim1_out, P.Value < 0.05) # filter for p-values < 0.05
+sig_lim <- unlist(lim1_out_sig$probe_id) # create vector of significant probes
+length(sig_lim)
+
+# remove the "X" from before all the probe names in the 'cluster_genexp' list
+clst_tidy <- lapply(cluster_genexp, function (x) {
+  a <- c(names(x)[1], gsub("X", "", names(x)[-1]))
+  names(x) <- a
+  return(x)
+})
+
+# shows how many genes in each network were found to be differentially expressed in the initial limma
+clst_tidy_1 <- lapply(clst_tidy, function(x) {
+  length(which(names(x) %in% sig_lim) == T)
+})
+
+# take all clusters with more than one gene that was found to be differentially expressed in the initial limma
+clst_tidy_2 <- lapply(clst_tidy, function(x) {
+  if (length(which(names(x) %in% sig_lim) == T) >= 1){
+    a <- which(names(x) %in% sig_lim)
+    x[, c(1, a)]
+  }
+})
+
+# remove NULL entries
+clst_tidy_3 <- clst_tidy_2[-which(sapply(clst_tidy_2, is.null))]
+
+# how many clusters?
+length(clst_tidy_3)
+
+# how many unique genes in those clusters?
+clst_de_gns <- lapply(clst_tidy_3, function (x) {
+  names(x)[-1]
+})
+clst_de_gns_1 <- unique(as.character(unlist(clst_de_gns))) # take only unique probe IDs and remove "X" prefix
+length(clst_de_gns_1)
+```
+
+Before running END on this new filtered set, we'll extract a few of the clusters with the most differentially expressed genes in them to see if the PET-pos and -neg groups separate with PCA.
+
+```{r}
+tail(sort(sapply(clst_tidy_2, length)), 6) # get names of six clusters with the most DE genes
+t <- attr(tail(sort(sapply(clst_tidy_2, length)), 6), "names") # create vector of cluster names
+
+# create list of just those six
+clst_test <- clst_tidy_3[t]
+
+# run loop over list to create plots for each
+cluster_plots <- lapply(names(clst_test), function(namex) {
+  df <- data.frame(clst_test[[namex]], stringsAsFactors = F)
+  colnames(df)[1] <- "X"
+  df1 <- left_join(keymeta1, df, by = c("AIBL.Id" = "X"))
+  
+  pca1 <- prcomp(df1[6:ncol(df1)], center = T, scale. = T)
+  library(ggfortify)
+  plot <- autoplot(pca1, data = df1, colour = "PET", label = T, label.label = "AIBL.Id") +
+    viridis::scale_colour_viridis(option = "viridis", discrete = T) +
+    ggtitle(namex)
+  print(plot)
+})
+```
+There's some separation, but not a lot. What if we combine them? That is, we take all the differentially expressed genes that also fell within networks.
+
+```{r}
+# get expression data for the 168 DE genes that fell within the networks
+test2 <- cbind(exdata3[, 1:5], exdata3[, sig_lim])
+pca2 <- prcomp(test2[6:ncol(test2)], center = T, scale. = T)
+autoplot(pca2, data = test2, colour = "PET", label = T, label.label = "AIBL.Id") +
+  viridis::scale_colour_viridis(option = "viridis", discrete = T)
+```
+
+Seems to be a bit of a dead end.
+
+Create eigenvalues for the filtered clusters.
+
+```{r}
+ll2 <- lapply(clst_tidy_3, function (x) {
+  xm <- as.matrix(log(x[,-1])) # creates a matrix, using log to standardise
+  svd.decomp2 <- svd(xm) # applies singular value decomposition
+  svd.v <- svd.decomp2$v # pulls out the matrix whose columns contain the right singular vectors of xm
+  X.pca <- xm %*% svd.v # multiplies the original 'xm' matrix by the right singular vectors matrix
+  xout <-  X.pca[,1] # takes the first eigemvalue for each individual
+  return(xout)
+})
+```
+
+Turn it into a data frame
+
+```{r}
+ll2d <- do.call(rbind.data.frame,ll2) # creates a data frame of eigenvalues
+ll2d2 <- t(ll2d) # transpose so that individuals are rows
+rownames(ll2d2) <- clst_tidy_3[[1]][,1]
+colnames(ll2d2) <- names(clst_tidy_3)
+```
+
+
+```{r}
+ll2d3 <- ll2d2[as.character(keymeta$AIBL.Id),] # put eigenvalue data in same order as keymeta
+kp <- ifelse(is.na(keymeta$PET)==T,FALSE,TRUE) # create vector of TRUE/FALSE for recorded PET status, to determine which ones are missing
+keymeta1 <- keymeta[kp,] # restrict metadata for just those with recorded PET status
+keymeta1 <- keymeta1[-c(grep(c("771|914|918"), keymeta1$AIBL.Id)), ] # remove outliers idenfitied with PCA on expression data
+
+Y1 <- factor(as.character(keymeta1$PET)) # create factor vector, where NEG = 1, POS = 2
+ll2d4 <- ll2d3[kp,] # remove individuals that do not have PET status recorded
+ll2d4 <- ll2d4[-c(grep(c("771|914|918"), rownames(ll2d4))), ] # remove outliers identified with PCA on expression data
+treat1<-factor(c(Y1), labels=c("Normal","Alzheimers")) # create vector of factors
+design_treat1<-model.matrix(~0+treat1) # create model matrix
+colnames(design_treat1) <- c("Normal","Alzheimers")
+contrast.matrix_treat1<-makeContrasts(Normal-Alzheimers, levels=design_treat1) # create contrast
+```
+
+Visualise eigenvalues to see if they separate the groups
+
+```{r}
+require(tidyverse)
+ll2d4.1 <- data.frame(ll2d4)
+ll2d4.1$AIBL.Id <- as.integer(rownames(ll2d4.1))
+vis2 <- left_join(ll2d4.1, keymeta1, by = "AIBL.Id")
+vis2 <- gather(vis2, key = "network", value = "eigenvalue", 1:(ncol(vis2) - 5))
+ggplot(vis2, aes(network, eigenvalue, colour = PET)) +
+  geom_jitter() # most networks seeem to have a pretty even distribution between POS and NEG groups
+```
+
+Run limma
+
+```{r}
+# Transpose data into matrix for limma fit
+x1 <- t(ll2d4)
+fit.lm1<-lmFit(x1,design_treat1) # fit a linear model using the matrix x1 from above
+fit1.c <-contrasts.fit(fit.lm1,contrast.matrix_treat1) # use contrasts made above
+fit.eb1<- eBayes(fit1.c) # compute Bayes statistics
+
+## comparison treated - untreated
+topALL2<-toptable(fit=fit1.c, eb=fit.eb1, adjust="fdr", n=244, genelist=colnames(ll2d4))
+topALL.2 <- topALL2[,c("ID","P.Value", "adj.P.Val")]
+
+# number of significantly differentiated networks 
+length(which(topALL.2$P.Value < 0.05))
+
+# number of significantly differentiated networks (FDR-adjusted)
+length(which(topALL.2$adj.P.Val < 0.05))
+```
+
+Join results to 'root_lim' table
+
+```{r}
+root_lim <- dplyr::left_join(root_lim,
+                      dplyr::select(topALL.2,
+                                    cluster_id = "ID",
+                                    end_cluster_de_p.value = "P.Value",
+                                    end_cluster_de_p.value_adj = "adj.P.Val"),
+                      by = "cluster_id")
+
+```
+
+### Carry out PCA on networks that are significantly differentiated at the FDR adjusted level
+
+```{r}
+# create data frame with attached metadata
+fdr_sig <- topALL.2$ID[topALL.2$adj.P.Val < 0.05]# create vector of significant network IDs 
+ll2d4.2 <- ll2d4.1[, colnames(ll2d4.1) %in% fdr_sig] # restrict to just those networks that are significant at the FDR-adjusted level
+ll2d4.2$AIBL.Id <- as.integer(rownames(ll2d4.2))
+ll2d4.2 <- left_join(ll2d4.2, keymeta1, by = "AIBL.Id")
+ll2d4.2 <- dplyr::select(ll2d4.2, AIBL.Id, Demographic.Sex, PET, apoe4, Age, everything())
+
+# carry out PCA
+pca3 <- prcomp(ll2d4.2[6:ncol(ll2d4.2)], center = T, scale. = T)
+
+autoplot(pca3, data = ll2d4.2, colour = "PET", label = T, label.label = "AIBL.Id") +
+    viridis::scale_colour_viridis(option = "viridis", discrete = T) +
+    ggtitle("PCA with significant clusters (FDR-adjusted)")
+```
+
+How about if we just take the top 10 clusters?
+```{r}
+# create data frame with attached metadata
+fdr_sig_10 <- topALL.2$ID[1:10]# create vector of significant network IDs 
+ll2d4.3 <- ll2d4.1[, colnames(ll2d4.1) %in% fdr_sig_10] # restrict to just those networks that are significant at the FDR-adjusted level
+ll2d4.3$AIBL.Id <- as.integer(rownames(ll2d4.3))
+ll2d4.3 <- left_join(ll2d4.3, keymeta1, by = "AIBL.Id")
+ll2d4.3 <- dplyr::select(ll2d4.3, AIBL.Id, Demographic.Sex, PET, apoe4, Age, everything())
+
+# carry out PCA
+pca3 <- prcomp(ll2d4.3[6:ncol(ll2d4.3)], center = T, scale. = T)
+
+autoplot(pca3, data = ll2d4.3, colour = "PET", label = T, label.label = "AIBL.Id") +
+    viridis::scale_colour_viridis(option = "viridis", discrete = T) +
+    ggtitle("PCA with top 10 significant clusters (FDR-adjusted)")
+```
+
+How about if we just take the top 5 clusters?
+```{r}
+# create data frame with attached metadata
+fdr_sig_5 <- topALL.2$ID[1:5]# create vector of significant network IDs 
+ll2d4.4 <- ll2d4.1[, colnames(ll2d4.1) %in% fdr_sig_5] # restrict to just those networks that are significant at the FDR-adjusted level
+ll2d4.4$AIBL.Id <- as.integer(rownames(ll2d4.4))
+ll2d4.4 <- left_join(ll2d4.4, keymeta1, by = "AIBL.Id")
+ll2d4.4 <- dplyr::select(ll2d4.4, AIBL.Id, Demographic.Sex, PET, apoe4, Age, everything())
+
+# carry out PCA
+pca4 <- prcomp(ll2d4.4[6:ncol(ll2d4.4)], center = T, scale. = T)
+
+autoplot(pca4, data = ll2d4.4, colour = "PET", label = T, label.label = "AIBL.Id") +
+    viridis::scale_colour_viridis(option = "viridis", discrete = T) +
+    ggtitle("PCA with top 5 significant clusters (FDR-adjusted)")
+```
+
+How about if we just take the top 2 clusters?
+```{r}
+# create data frame with attached metadata
+fdr_sig_2 <- topALL.2$ID[1:2]# create vector of significant network IDs 
+ll2d4.5 <- ll2d4.1[, colnames(ll2d4.1) %in% fdr_sig_2] # restrict to just those networks that are significant at the FDR-adjusted level
+ll2d4.5$AIBL.Id <- as.integer(rownames(ll2d4.5))
+ll2d4.5 <- left_join(ll2d4.5, keymeta1, by = "AIBL.Id")
+ll2d4.5 <- dplyr::select(ll2d4.5, AIBL.Id, Demographic.Sex, PET, apoe4, Age, everything())
+
+# carry out PCA
+pca5 <- prcomp(ll2d4.5[6:ncol(ll2d4.5)], center = T, scale. = T)
+
+autoplot(pca5, data = ll2d4.5, colour = "PET", label = T, label.label = "AIBL.Id") +
+    viridis::scale_colour_viridis(option = "viridis", discrete = T) +
+    ggtitle("PCA with top 2 significant clusters (FDR-adjusted)")
+```
+
+How about with all clusters at the nominal p-value?
+```{r}
+# create data frame with attached metadata
+fdr_sig_all <- topALL.2$ID[topALL.2$P.Value < 0.05]# create vector of significant network IDs 
+ll2d4.6 <- ll2d4.1[, colnames(ll2d4.1) %in% fdr_sig_all] # restrict to just those networks that are significant at the FDR-adjusted level
+ll2d4.6$AIBL.Id <- as.integer(rownames(ll2d4.6))
+ll2d4.6 <- left_join(ll2d4.6, keymeta1, by = "AIBL.Id")
+ll2d4.6 <- dplyr::select(ll2d4.6, AIBL.Id, Demographic.Sex, PET, apoe4, Age, everything())
+
+# carry out PCA
+pca6 <- prcomp(ll2d4.6[6:ncol(ll2d4.6)], center = T, scale. = T)
+
+autoplot(pca6, data = ll2d4.6, colour = "PET", label = T, label.label = "AIBL.Id") +
+    viridis::scale_colour_viridis(option = "viridis", discrete = T) +
+    ggtitle("PCA with significant clusters")
+```
+
+## Enrich for genes significant eQTL genes
+
+Find which of the significant DE genes from the initial limma were also significant from the eQTL analysis of the PET-pos group
+```{r}
+which(lim1_out_sig$probe_id %in% pos_sig_eqtl_gns$gene)
+```
+None!
+
+How about the eQTL analysis from the group as a whole?
+
+```{r}
+which(lim1_out_sig$probe_id %in% sig_eqtl_gns$gene)
+
+# get probe IDs for the DE eQTL genes
+eqtl_sig_probes <- lim1_out_sig$probe_id[lim1_out_sig$probe_id %in% sig_eqtl_gns$gene]
+
+# create list of cluster IDs that contain genes that were DE in the eQTL analysis
+test <- lapply(clst_tidy, function(x){
+  if (length(which(names(x) %in% eqtl_sig_probes) >= 1)){
+    return(x)
+  }
+})
+test <- test[-which(sapply(test, is.null))] # remove NULL entries
+
+# create vector of cluster IDs
+eqtl_cluster_ids <- names(test)
+
+ll2d4.7 <- ll2d4.1[, colnames(ll2d4.1) %in% eqtl_cluster_ids]  # restrict to just those networks that hold genes that were DE in the eQTL analysis
+ll2d4.7$AIBL.Id <- as.integer(rownames(ll2d4.7))
+ll2d4.7 <- left_join(ll2d4.7, keymeta1, by = "AIBL.Id")
+ll2d4.7 <- dplyr::select(ll2d4.7, AIBL.Id, Demographic.Sex, PET, apoe4, Age, everything())
+
+# carry out PCA
+pca7 <- prcomp(ll2d4.7[6:ncol(ll2d4.7)], center = T, scale. = T)
+
+autoplot(pca7, data = ll2d4.7, colour = "PET", label = T, label.label = "AIBL.Id") +
+    viridis::scale_colour_viridis(option = "viridis", discrete = T) +
+    ggtitle("PCA differentially expressed eQTL genes")
+```
+
+## Get filtered gene list
+
+```{r}
+library(rjson)
+filtered_clusters <- fromJSON(file = "C:/Users/bre227/Dropbox/eQTL/Results/cluster_data/gene_clusters_filtered.json")
+filtered_clusters1 <- lapply(filtered_clusters, function(x){ # extract just the genes
+  return(x$genes)
+})
+dingo_filtered_probes <- unique(unlist(lapply(filtered_clusters1, function(x){
+  a <- as.character(x)
+  return(a)
+})))
+
+# how many unique probes are there in the filtered iDINGO output?
+length(dingo_filtered_probes)
+
+# save RData file of filtered_clusters and dingo_filtered_probes
+save(filtered_clusters, file = "C:/Users/bre227/Documents/R/AD_project/Data/Networks/filtered_clusters.RData")
+
+save(dingo_filtered_probes, file = "C:/Users/bre227/Documents/R/AD_project/Data/Networks/dingo_filtered_probes.RData")
+
+```
+This is the same number of unique probes as in 'cluster_genexp', which means the latter had already been filtered. 
+
+*9 February 2018*
+
+## Summary tables
+
+: Counts of genes and networks comparing PET-pos v PET-neg groups
+
+|    | No. unique genes (probes) sig. at p < 0.05 (annotated)| No. genes (probes) sig. FDR-adjusted level (annotated) | No. networks|
+|:--------------------|:-------------------:|:-------------------:|:------------------:|
+|DE in limma (1) |`r nrow(sig_PET_pos_v_neg)` (`r length(unique(na.omit(sig_PET_pos_v_neg$gene_symbol)))`)| `r length(which(sig_PET_pos_v_neg$adj.P.Val < 0.05))`| `r length(cluster_genexp)`|
+|Sig. diff. correlation from iDINGO | `r length(dingo_filtered_probes)` (`r length(na.omit(pid_all$gene_symbol[pid_all$probe_id %in% dingo_filtered_probes]))`) | ? | `r length(filtered_clusters)`|
+|No. sig. genes from (1) in networks | `r length(clst_de_gns_1)` (`r length(clst_de_gns_1 %in% pid_all$probe_id)`)| NA |`r length(clst_tidy_3)`| 
+
+***
+
+For Monday:
+
+* Increase the threshold for the number of DE genes in each cluster from 1 to say, 5, create eigenvalues, for those, and then see how much better the PCA gets. Or just take the top 10 clusters. 
+
+* Find which differentially expressed eQTL genes are within the FDR-adjusted significant networks of the limma run on the above.
+
+* Create boxplots for those genes by genotype, APOE-e4, and PET status.
+
+***
+
+*13 February 2018*
+
+## PCA for clusters with most DE genes in them
+
+### Create function to create eigenvalues and run limma
+```{r}
+# create function for PCA analysis
+
+end_pca_plot <- function(cluster_list, title){
+  
+# create eigenvalues
+  ll <- lapply(cluster_list, function (x) {
+    xm <- as.matrix(log(x[,-1])) # creates a matrix, using log to standardise
+    svd.decomp2 <- svd(xm) # applies singular value decomposition
+    svd.v <- svd.decomp2$v # pulls out the matrix whose columns contain the right singular vectors of xm
+    X.pca <- xm %*% svd.v # multiplies the original 'xm' matrix by the right singular vectors matrix
+    xout <-  X.pca[,1] # takes the first eigemvalue for each individual
+    return(xout)
+  })
+  
+  # turn it into a data frame
+  lld <- do.call(rbind.data.frame,ll) # creates a data frame of eigenvalues
+  lld2 <- t(lld) # transpose so that individuals are rows
+  rownames(lld2) <- cluster_list[[1]][,1]
+  colnames(lld2) <- names(cluster_list)
+
+  # filter data and create contrasts
+  keymeta <- read.table("C:/Users/bre227/Documents/R/AD_project/Working/key_metadata.txt", header = T) # read key metadata
+  lld3 <- lld2[as.character(keymeta$AIBL.Id),] # put eigenvalue data in same order as keymeta
+  kp <- ifelse(is.na(keymeta$PET)==T,FALSE,TRUE) # create vector of TRUE/FALSE for recorded PET status, to determine which ones are missing
+  keymeta1 <- keymeta[kp,] # restrict metadata for just those with recorded PET status
+  keymeta1 <- keymeta1[-c(grep(c("771|914|918"), keymeta1$AIBL.Id)), ] # remove outliers idenfitied with PCA on expression data
+  Y1 <- factor(as.character(keymeta1$PET)) # create factor vector, where NEG = 1, POS = 2
+  lld4 <- lld3[kp,] # remove individuals that do not have PET status recorded
+  lld4 <- lld4[-c(grep(c("771|914|918"), rownames(lld4))), ] # remove outliers identified with PCA on expression data
+  treat1<-factor(c(Y1), labels=c("Normal","Alzheimers")) # create vector of factors
+  design_treat1<-model.matrix(~0+treat1) # create model matrix
+  colnames(design_treat1) <- c("Normal","Alzheimers")
+  contrast.matrix_treat1<-makeContrasts(Normal-Alzheimers, levels=design_treat1) # create contrast
+
+  # run limma
+  x1 <- t(lld4) # Transpose data into matrix for limma fit
+  fit.lm1<-lmFit(x1,design_treat1) # fit a linear model using the matrix x1 from above
+  fit1.c <-contrasts.fit(fit.lm1,contrast.matrix_treat1) # use contrasts made above
+  fit.eb1<- eBayes(fit1.c) # compute Bayes statistics
+  topALL1<-toptable(fit=fit1.c, eb=fit.eb1, adjust="fdr", n=length(cluster_list), genelist=colnames(lld4))## comparison treated - untreated
+  
+  # create data frame with attached metadata
+  if (length(topALL1$ID[topALL1$adj.P.Val < 0.05]) > 0){
+    fdr_sig <- topALL1$ID[topALL1$adj.P.Val < 0.05]# create vector of significant network IDs
+  } else {
+    fdr_sig <- topALL1$ID[topALL1$P.Value < 0.05]
+  }
+  lld4.1 <- data.frame(lld4)
+  lld4.2 <- lld4.1[, colnames(lld4.1) %in% fdr_sig] # restrict to just those networks that are significant at the FDR-adjusted level
+  lld4.2$AIBL.Id <- as.integer(rownames(lld4.2))
+  require(dplyr)
+  lld4.2 <- left_join(lld4.2, keymeta1, by = "AIBL.Id")
+  lld4.2 <- dplyr::select(lld4.2, AIBL.Id, Demographic.Sex, PET, apoe4, Age, everything())
+
+  # run PCA
+  pca <- prcomp(lld4.2[6:ncol(lld4.2)], center = T, scale. = T)
+
+  # plot
+  require(ggplot2)
+  require(ggfortify)
+  plot <- autoplot(pca, data = lld4.2, colour = "PET", label = T, label.label = "AIBL.Id") +
+      viridis::scale_colour_viridis(option = "viridis", discrete = T) +
+      ggtitle(title)
+  return(plot)
+}
+```
+
+### Top 10 clusters with most DE genes
+```{r}
+tail(sort(sapply(clst_tidy_2, length)), 10) # get names of six clusters with the most DE genes
+t <- attr(tail(sort(sapply(clst_tidy_2, length)), 10), "names") # create vector of cluster names
+
+# create list of just those six
+clst_top_10 <- clst_tidy_3[t]
+```
+
+Run function on 'clst_top_10'
+```{r}
+end_pca_plot(clst_top_10, "PCA using 10 clusters with the most DE genes")
+```
+
+### Top 5 clusters with most DE genes
+```{r}
+tail(sort(sapply(clst_tidy_2, length)), 5) # get names of six clusters with the most DE genes
+t <- attr(tail(sort(sapply(clst_tidy_2, length)), 5), "names") # create vector of cluster names
+
+# create list of just those six
+clst_top_5 <- clst_tidy_3[t]
+```
+
+Run function on 'clst_top_5'
+```{r}
+end_pca_plot(clst_top_5, "PCA using 5 clusters with the most DE genes")
+```
+
+## Analyse filtered clusters from iDINGO
+
+Meeting with JD:
+
+*Take average of absolute z-scores.
+*Take 5th percentile from either end.
+*Get mean, median, SD
+  -This will let us know which clusters separate the two groups the best
+*Dingo
+  -Take the average of the bootstrap replications (the difference). The better that does, the smaller the error around the bootstrap average.
+
+Load files
+```{r}
+# load files from dropbox
+load("C:/Users/bre227/Dropbox/eQTL/Results/cluster_data/iDINGO_results/RData/All_clusters.RData")
+# create list
+dingo_clstrs <- mget(ls(pattern = "hsa"))
+# remove indidivual cluster lists
+rm(list = ls(pattern = "hsa"))
+```
+
+Get the mean of each gene pair's bootstrap
+
+```{r}
+dingo_clstrs_2 <- lapply(dingo_clstrs, function(x){
+  apply(x[["bootdiff"]], 1, mean)
+})
+```
+
+Find the indexes for the gene pairs that sit in the extreme tails (<2.5%, >97.5%)
+
+```{r}
+dingo_clstrs_3 <- lapply(dingo_clstrs_2, function(x){
+  which(x < quantile(x, 0.025) | x > quantile(x, 0.975))
+})
+```
+
+Get gene pairs corresponding to indexes
+
+```{r}
+# create function to extract gene pairs
+ind_match <- function(x, y){
+  list(x[["genepairs"]][y, ])
+}
+
+# run over both lists
+dingo_clstrs_4 <- mapply(ind_match, dingo_clstrs, dingo_clstrs_3)
+```
+
+Get unique genes in each network
+
+```{r}
+dingo_clstrs_5 <- lapply(dingo_clstrs_4, function(x){
+  a <- unique(x[["gene1"]])
+  b <- unique(x[["gene2"]])
+  union(a, b)
+})
+```
+
+Pull out expression data for those genes
+
+```{r}
+# find which clusters in 'dingo_clstrs_5 aren't in 'cluster_genexp' and remove
+dingo_clstrs_6 <- dingo_clstrs_5[which(names(dingo_clstrs_5) %in% names(cluster_genexp))]
+
+# test
+# names(cluster_genexp[[2]])[names(cluster_genexp[[2]]) %in% dingo_clstrs_5[[2]]]
+
+# create function to find which genes in 'cluster_genexp' that are in 'dingo_clstrs_6' 
+gene_match <- function(x, y){
+  cbind(x[1], x[names(x) %in% y])
+}
+
+# extract expression data for genes in 'cluster_genexp' that are in 'dingo_clstrs_6'
+dingo_clstrs_7 <- mapply(gene_match, cluster_genexp, dingo_clstrs_6)
+```
+
+```{r}
+end_pca_plot(dingo_clstrs_7, "PCA using END genes (5% threshold)")
+```
+
+Not great clustering. Try higher threshold?
+
+### PCA with END at 1 percentile threshold
+
+Create function to END dingo analysis
+
+```{r}
+
+end_filter <- function(list, lower, upper){
+  
+  # get list of means for the bootstrapped difference
+  dingo_clstrs_2 <- lapply(list, function(x){
+    apply(x[["bootdiff"]], 1, mean)
+  })
+  
+  # Find the indexes for the gene pairs that sit in the extreme tails
+  dingo_clstrs_3 <- lapply(dingo_clstrs_2, function(x){
+    which(x < quantile(x, lower) | x > quantile(x, upper))
+  })
+  
+  # get gene pairs corresponding to indexes
+  ind_match <- function(x, y){ # create function to extract gene pairs
+    list(x[["genepairs"]][y, ])
+  }
+  
+  dingo_clstrs_4 <- mapply(ind_match, dingo_clstrs, dingo_clstrs_3) # run over both lists
+  
+  # get unique genes in each network
+  dingo_clstrs_5 <- lapply(dingo_clstrs_4, function(x){
+    a <- unique(x[["gene1"]])
+    b <- unique(x[["gene2"]])
+    union(a, b)
+  })
+  
+  # pull out expression data for those genes
+  dingo_clstrs_6 <- dingo_clstrs_5[which(names(dingo_clstrs_5) %in% names(cluster_genexp))] # find which clusters in 'dingo_clstrs_5 aren't in 'cluster_genexp' and remove
+  
+  gene_match <- function(x, y){ # create function to find which genes in 'cluster_genexp' that are in 'dingo_clstrs_6' 
+    cbind(x[1], x[names(x) %in% y])
+  }
+  
+  dingo_clstrs_7 <- mapply(gene_match, cluster_genexp, dingo_clstrs_6) # extract expression data for genes in 'cluster_genexp' that are in 'dingo_clstrs_6'
+  
+  # remove clusters with 0 genes
+  if (any(sapply(dingo_clstrs_7, function(x) length(x) < 2))){
+    dingo_clstrs_8 <- lapply(dingo_clstrs_7, function(x) { # create NULL entries
+    if (length(x) < 2){
+      x <- NULL
+    } else {
+      x
+    }
+    })
+    dingo_clstrs_8 <- dingo_clstrs_8[-which(sapply(dingo_clstrs_8, is.null))]
+    dingo_clstrs_8
+  } else {
+    dingo_clstrs_7
+  }
+}
+```
+
+Run with 1% on either side
+```{r, message = F}
+one_percentile <- end_filter(dingo_clstrs, 0.01, 0.99)
+end_pca_plot(one_percentile, "PCA using END genes (1% threshold)")
+```
+
+### PCA with END at 0.5 percentile threshold
+
+```{r, message = F}
+half_percentile <- end_filter(dingo_clstrs, 0.005, 0.995)
+end_pca_plot(half_percentile, "PCA using END genes (0.5% threshold)")
+```
+
+### PCA with END at 0.25 percentile threshold
+
+```{r}
+quarter_percentile <- end_filter(dingo_clstrs, 0.0025, 0.9975)
+end_pca_plot(quarter_percentile, "PCA using END genes (0.25% threshold)")
+```
+
+### PCA with END at 0.1 percentile threshold
+
+```{r}
+point1_percentile <- end_filter(dingo_clstrs, 0.001, 0.999)
+end_pca_plot(point1_percentile, "PCA using END genes (0.1% threshold)")
+```
+
+
+***
+
+*19 February 2018*
+
+Create tables of annotated significant genes and SNPs from all the analyses
+
+Original limma on gene expression data
+```{r}
+sig_PET_pos_v_neg
+```
+
+SNP association
+
+```{r}
+
+```
+
+eQTL
+
+```{r}
+
+```
+
+*Meeting with JD and MV*
+
+*Create a table of p-values: 
+    - one column for the intial limma results for the root gene of the network
+    - one column for the limma results from the END for the networks containing just the genes that were significantly DE in the initial limma
+    - one column for the limma results from the END for the networks containing just the genes that were filtered using the iDINGO results
+    
+*20 February 2018*
+
+# Comparison between approaches
+
+## Get table of results from initial limma
+
+```{r}
+#select and rename relevant columns
+init_lim_table <- sig_PET_pos_v_neg[!is.na(sig_PET_pos_v_neg$gene_symbol), ] %>%
+  dplyr::select(probe_id, gene_symbol, logFC_init_limma = "logFC", p_value_init_limma = "P.Value", FDR_init_limma = "adj.P.Val")
+
+# convert to character to later merging
+init_lim_table$probe_id <- as.character(init_lim_table$probe_id)
+```
+
+## Get table of results from limma from END for networks containing just DE genes
+
+```{r}
+# read table with gene-cluster information
+gns_in_clstrs <- read.table("C:/Users/bre227/Dropbox/eQTL/Results/cluster_data/gene_clusters_PC1.csv", sep = ",", header = T)
+gns_in_clstrs <- dplyr::rename(gns_in_clstrs, probe_id = "X")
+
+# get names of all the clusters that each gene falls within
+hsas <- apply(gns_in_clstrs, 1, function(x) {
+  colnames(gns_in_clstrs[which(!is.na(x))][-1])
+})
+names(hsas) <- gns_in_clstrs$probe_id
+
+# turn 'hsas' list into a data frame column
+hsas_df <- enframe(hsas)
+
+# bind with initial limma results
+p_table_1 <- left_join(init_lim_table, 
+                       dplyr::select(hsas_df, name, networks = "value"), 
+                       by = c("probe_id" = "name"))
+```
+
+How many of the initial DE genes fell within netorks?
+
+```{r}
+length(which(sapply(p_table_1$networks, is.null) == F))
+```
+So only `r length(which(sapply(p_table_1$value, is.null) == F))` of the DE probes from the original limma fell within a network.
+
+Bind with 'genemap'
+```{r}
+genemap$root_gene_probe_id <- as.character(genemap$root_gene_probe_id)
+p_table_2 <- dplyr::left_join(p_table_1, 
+                              dplyr::select(genemap, root_gene_probe_id, rooted_network = "hsa", name),
+                              by = c("probe_id" = "root_gene_probe_id"))
+```
+
+Get END results for clusters containing DE genes only
+```{r, warning = F}
+# get table of p-values
+end_clsts_de_gns_only <- end_eigen(clst_tidy_3)
+
+# join to table
+p_table_3 <- dplyr::left_join(p_table_2,
+                              dplyr::select(end_clsts_de_gns_only, ID, logFC_END_DE_only = "logFC", p_value_END_DE_only = "P.Value", FDR_END_DE_only = "adj.P.Val"),
+                              by = c("rooted_network" = "ID"))
+```
+
+## Get table of results for END-filtered networks
+
+For 0.5% threshold
+
+```{r}
+end_results_0.5 <- end_eigen(half_percentile)
+# join to table
+p_table_4 <- dplyr::left_join(p_table_3,
+                              dplyr::select(end_results_0.5, ID, logFC_END_0.5 = "logFC", p_value_END_0.5 = "P.Value", FDR_END_0.5 = "adj.P.Val"),
+                              by = c("rooted_network" = "ID"))
+```
+
+For 0.25% threshold
+
+```{r}
+end_results_0.25 <- end_eigen(quarter_percentile)
+# join to table
+p_table_5 <- dplyr::left_join(p_table_4,
+                              dplyr::select(end_results_0.25, ID, logFC_END_0.25 = "logFC", p_value_END_0.25 = "P.Value", FDR_END_0.25 = "adj.P.Val"),
+                              by = c("rooted_network" = "ID"))
+```
+
+
+For 0.1% threshold
+
+```{r}
+end_results_0.1 <- end_eigen(point1_percentile)
+# join to table
+p_table_6 <- dplyr::left_join(p_table_5,
+                              dplyr::select(end_results_0.1, ID, logFC_END_0.1 = "logFC", p_value_END_0.1 = "P.Value", FDR_END_0.1 = "adj.P.Val"),
+                              by = c("rooted_network" = "ID"))
+```
+
+Filter data for plotting
+
+```{r}
+p_table_7 <- p_table_6[!is.na(p_table_6$rooted_network), ]
+# add columns for significance
+p_table_8 <- mutate(p_table_7, 
+                    FDR_sig = ifelse())
+```
+
+### Create function for volcano plots
+
+```{r}
+
+# works
+
+vol_plot <- function(limma_output, xvar = "logFC_column", yvar = "p_value_column", alpha = 0.05, title = "Volcano plot", FDR = c(T, F), label_limit = alpha, label_type = c("gene", "network")){
+  # load required packages
+  require(tidyverse)
+  require(ggrepel)
+  
+  # create data frame for manipulation
+  data <- limma_output
+  data$xcol <- data[, xvar]
+  data$ycol <- data[, yvar]
+  data$sig <- ifelse(data$ycol < alpha, "sig", "not sig") # create column for sign/non-sig
+  data$ytrans <- -log10(data$ycol) # log transform p-values
+  
+  if (FDR == T){
+    lab <- expression(-log[10]("FDR"))
+  } 
+  if (FDR == F){
+    lab <- expression(-log[10]("p-value"))
+  }
+  
+  # run ggplot
+  p <-  ggplot(data = data,
+          aes(x = xcol, y = ytrans),
+          environment = environment()) +
+  geom_point(aes(col = sig)) +
+  scale_colour_manual(values = c("sig" = "#F8766D", "not sig" = "#00BFC4")) +
+  geom_hline(yintercept = -log10(alpha)) +
+  xlim(-0.15, 0.2) +
+  ylim(0, 4) +
+  xlab(expression(log[2]("fold change"))) +
+  ylab(lab) +
+  ggtitle(paste(title, " (alpha = ", alpha, ")", sep = ""))
+
+  # create labels based on either gene or network
+  ifelse(label_type == "gene",
+         return(p + geom_text_repel(data = dplyr::filter(data, ycol < label_limit),
+                                    aes(label = gene_symbol))),
+         ifelse(label_type == "network",
+                return(p + geom_text_repel(data = dplyr::filter(data, ycol < label_limit),
+                                           aes(label = name))),
+                return(p)))
+  
+}
+```
+
+
+### Volcano plots comparing END results at different thresholds
+
+```{r}
+vol_plot(p_table_7, xvar = "logFC_END_0.1", yvar = "FDR_END_0.1", title = "END with genes in 0.1 percentile", FDR = T)
+
+vol_plot(p_table_7, xvar = "logFC_END_0.25", yvar = "FDR_END_0.25", title = "END with genes in 0.25 percentile", FDR = T)
+
+vol_plot(p_table_7, xvar = "logFC_END_0.5", yvar = "FDR_END_0.5", title = "END with genes in 0.5 percentile", FDR = T)
+```
+
+
+### Volcano plots comparing nominal p-values
+
+```{r}
+vol_plot(p_table_7, xvar = "logFC_init_limma", yvar = "p_value_init_limma", title = "Initial limma: PET-pos v -neg", FDR = F, label_limit = 0.001)
+
+vol_plot(p_table_7, xvar = "logFC_END_0.5", yvar = "p_value_END_0.5", title = "END with genes in 0.5 percentile", FDR = F, label_limit = 0.001)
+
+vol_plot(p_table_7, xvar = "logFC_END_DE_only", yvar = "p_value_END_DE_only", title = "END with DE genes only", FDR = F, label_limit = 0.001, label_type = "gene")
+```
+
+
+### Volcano plots comparing FDR p-values
+```{r}
+a <- vol_plot(p_table_7, xvar = "logFC_init_limma", yvar = "FDR_init_limma", title = "Initial limma: PET-pos v -neg", FDR = T)
+b <- vol_plot(p_table_7, xvar = "logFC_END_0.5", yvar = "FDR_END_0.5", title = "END with genes in 0.5 percentile", FDR = T)
+c <- vol_plot(p_table_7, xvar = "logFC_END_DE_only", yvar = "FDR_END_DE_only", title = "END with DE genes only", FDR = T, label_limit = 0.005, label_type = "gene")
+
+require(cowplot)
+test <- plot_grid(a, b, c, ncol = 3)
+ggsave("C:/Users/bre227/Documents/R/AD_project/Working/comp_volc_plot_root_genes.jpeg", plot = test, device = "jpeg", width = 100, height = 30, units = "cm")
+
+
+# redo with network names instead
+
+d <- vol_plot(p_table_7, xvar = "logFC_init_limma", yvar = "FDR_init_limma", title = "Initial limma: PET-pos v -neg", FDR = T)
+e <- vol_plot(p_table_7, xvar = "logFC_END_0.5", yvar = "FDR_END_0.5", title = "END with genes in 0.5 percentile", FDR = T, label_type = "network")
+f <- vol_plot(p_table_7, xvar = "logFC_END_DE_only", yvar = "FDR_END_DE_only", title = "END with DE genes only", FDR = T, label_limit = 0.005, label_type = "network")
+
+require(cowplot)
+test <- plot_grid(d, e, f, ncol = 3)
+ggsave("C:/Users/bre227/Documents/R/AD_project/Working/comp_volc_plot_networks.jpeg", plot = test, device = "jpeg", width = 100, height = 30, units = "cm")
 ```
 
 
 
-<!--Ignore below
-
-create vectors for start and end loci
-proxy_start <- as.vector(proxy_loci$chrom_start)
-proxy_end <- as.vector(proxy_loci$chrom_end)
-
- access gene mart
-listMarts()
-gene_mart <- useMart('ENSEMBL_MART_ENSEMBL')
-listDatasets(gene_mart)
-gene_mart <- useMart('ENSEMBL_MART_ENSEMBL', 'hsapiens_gene_ensembl')
-
-get genes associated with proxy SNPs
-proxy_gns <- getBM(attributes = c("start_position", "hgnc_symbol"),
-                   #filters = c("start", "end"),
-                   #values = list(proxy_start, proxy_end),
-                   #mart = gene_mart) # query: command takes four hours to run?
-
-output was 49 million observations of 2 variables??
-
-
-
-# Alternative method to the one above
-
-genelist <- grch38 %>% 
-  dplyr::select(symbol, chr, start, end)
-gns <- makeGRangesFromDataFrame(genelist,
-                                keep.extra.columns = T,
-                                ignore.strand = T,
-                                seqnames.field = "chr",
-                                start.field = "start",
-                                end.field = "end")
-
-proxygr <- makeGRangesFromDataFrame(proxy_loci,
-                                    ignore.strand = T,
-                                    seqnames.field = "chr_name",
-                                    start.field = "chrom_start",
-                                    end.field = "chrom_end")
-
-overlapGenes <- data.frame(findOverlaps(proxygr, gns))
-regionsWIthHits <- data.frame(proxygr[overlapGenes$queryHits])
-regionsWIthHits$genes <- gns$symbol[overlapGenes$subjectHits]
-length(unique(regionsWIthHits$genes)) # returns 734
-
-
-## test using online BioMart
-
-#mart <- useMart('ENSEMBL_MART_SNP', 'hsapiens_snp')
-#proxy_loci <- getBM(attributes = c("refsnp_id", "chr_name", "chrom_start", "chrom_end", "chrom_strand"),
-                    #filters = c("snp_filter"),
-                    #values = c(uq_proxies),
-                    #mart = mart) # showed that all ~18,000 SNPs lie on the forward strand??
-
-#proxies_500 <- head(snap2, n = 500) %>% 
-#  dplyr::select(Proxy, Chromosome, Coordinate_HG18)
-#colnames(proxies_500)[colnames(proxies_500) == "Coordinate_HG18"] <- "Start"
-#proxies_500$Strand <- 1
-#chr <- as.character(proxies_500$Chromosome)
-#chr <- gsub("chr", "", chr)
-#proxies_500$Chromosome <- chr
-#rm(chr)
-#proxies_500$loci <- paste(proxies_500$Chromosome, proxies_500$Start, proxies_500$Start, "1", sep = ":")
-#write.table(proxies_500$loci, file = "biomart.test.txt", quote = F, row.names = F, col.names = F)
-
-## only returned a handfull of entries, instead of the expectd 500
-
-##################################################
-
-# test using ensemblVEP package
-
-library(ensemblVEP)
-write.table(uq_proxies, "~/R/AD Project/Working/uq_proxies.txt", quote = F, row.names = F, col.names = F)
-## submit file to "http://www.ensembl.org/Tools/VEP" and use output as follows
-
-uq_proxies_output <- read.delim("~/R/AD Project/Working/uq_proxies_VEP_output.txt", header = T)
-
-# extract unique SNPid and gene names
-prxy_snpsandgns <- dplyr::select(uq_proxies_output, X.Uploaded_variation, SYMBOL)
-uq_prxy_snpsandgns <- prxy_snpsandgns[!duplicated(prxy_snpsandgns), ]
-
-# produce same file but for AIBL SNPs
-
-AIBL_SNPs <- as.vector(unique(aibl_snps$SNP))
-write.table(AIBL_SNPs, "~/R/AD Project/Working/AIBL_SNPs.txt", quote = F, row.names = F, col.names = F)
-
-# extract unique SNPid and gene names
-
-aibl_snps_output <- read.delim("~/R/AD Project/Working/AIBL_SNPs_VEP_output.txt", header = T)
-AIBL_snpsandgns <- dplyr::select(aibl_snps_output, X.Uploaded_variation, SYMBOL)
-uq_AIBL_snpsandgns <- AIBL_snpsandgns[!duplicated(AIBL_snpsandgns), ]
-
-########################
-
-# through bioconductor
-library(ensemblVEP)
-myparam <- VEPFlags(version = max(unlist(currentVEP())),
-                    scriptPath = character(),
-                    flags <- list(vcf = F, 
-                                 everything,
-                                 output_file = "~/R/AD Project/Working/AIBL_SNPs.txt"))
-
--->
