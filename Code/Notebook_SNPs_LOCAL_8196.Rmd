@@ -3082,28 +3082,21 @@ a <- vol_plot(p_table_7, xvar = "logFC_init_limma", yvar = "FDR_init_limma", tit
 b <- vol_plot(p_table_7, xvar = "logFC_END_0.5", yvar = "FDR_END_0.5", title = "END with genes in 0.5 percentile", FDR = T)
 c <- vol_plot(p_table_7, xvar = "logFC_END_DE_only", yvar = "FDR_END_DE_only", title = "END with DE genes only", FDR = T, label_limit = 0.005, label_type = "gene")
 
+require(cowplot)
+test <- plot_grid(a, b, c, ncol = 3)
+ggsave("C:/Users/bre227/Documents/R/AD_project/Working/comp_volc_plot_root_genes.jpeg", plot = test, device = "jpeg", width = 100, height = 30, units = "cm")
+
+
 # redo with network names instead
 
 d <- vol_plot(p_table_7, xvar = "logFC_init_limma", yvar = "FDR_init_limma", title = "Initial limma: PET-pos v -neg", FDR = T)
 e <- vol_plot(p_table_7, xvar = "logFC_END_0.5", yvar = "FDR_END_0.5", title = "END with genes in 0.5 percentile", FDR = T, label_type = "network")
 f <- vol_plot(p_table_7, xvar = "logFC_END_DE_only", yvar = "FDR_END_DE_only", title = "END with DE genes only", FDR = T, label_limit = 0.005, label_type = "network")
 
-a
-b
-c
-d
-e
-f
-```
-
-
-```{r}
-require(cowplot)
-test <- plot_grid(a, b, c, ncol = 3)
-ggsave("C:/Users/bre227/Documents/R/AD_project/Working/comp_volc_plot_root_genes.jpeg", plot = test, device = "jpeg", width = 100, height = 30, units = "cm")
-
 require(cowplot)
 test <- plot_grid(d, e, f, ncol = 3)
 ggsave("C:/Users/bre227/Documents/R/AD_project/Working/comp_volc_plot_networks.jpeg", plot = test, device = "jpeg", width = 100, height = 30, units = "cm")
 ```
+
+
 
