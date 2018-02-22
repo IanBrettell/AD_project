@@ -623,6 +623,7 @@ Attach gene data to PET
 ```{r}
 library(tidyverse)
 sig_PET_pos_v_neg <- left_join(signif_PET_pos_v_neg, pid_all, by = "probe_id")
+sig_PET_pos_v_neg$probe_id <- as.character(sig_PET_pos_v_neg$probe_id)# make probe id column a character vector to make merging easier later
 length(which(!is.na(sig_PET_pos_v_neg$gene_symbol))) # to get number of genes with gene IDs
 ```
 
@@ -2915,6 +2916,15 @@ init_lim_table$probe_id <- as.character(init_lim_table$probe_id)
 
 ## Get table of results from limma from END for networks containing just DE genes
 
+
+### WORKING
+
+```{r}
+gene_clusters_raw <- fromJSON(file = "C:/Users/bre227/Dropbox/eQTL/Results/cluster_data/gene_clusters_raw.json")
+```
+
+
+### What we did
 ```{r}
 # read table with gene-cluster information
 gns_in_clstrs <- read.table("C:/Users/bre227/Dropbox/eQTL/Results/cluster_data/gene_clusters_PC1.csv", sep = ",", header = T)
@@ -2994,13 +3004,17 @@ p_table_6 <- dplyr::left_join(p_table_5,
                               by = c("rooted_network" = "ID"))
 ```
 
-Filter data for plotting
+For 1% threshold, and filter data for plotting
 
 ```{r}
 p_table_7 <- p_table_6[!is.na(p_table_6$rooted_network), ]
-# add columns for significance
-p_table_8 <- mutate(p_table_7, 
-                    FDR_sig = ifelse())
+
+# add results for END 1 percentile
+end_results_1 <- end_eigen(one_percentile)
+
+p_table_7 <- dplyr::left_join(p_table_7,
+                              dplyr::select(end_results_1, ID, logFC_END_1 = "logFC", p_value_END_1 = "P.Value", FDR_END_1 = "adj.P.Val"),
+                              by = c("rooted_network" = "ID"))
 ```
 
 ### Create function for volcano plots
@@ -3009,7 +3023,7 @@ p_table_8 <- mutate(p_table_7,
 
 # works
 
-vol_plot <- function(limma_output, xvar = "logFC_column", yvar = "p_value_column", alpha = 0.05, title = "Volcano plot", FDR = c(T, F), label_limit = alpha, label_type = c("gene", "network")){
+vol_plot <- function(limma_output, xvar = "logFC_column", yvar = "p_value_column", alpha = 0.05, title = "Volcano plot", FDR = c(T, F), label_limit = alpha, label_type = c("gene", "network"), xlim_start = -0.15, xlim_end = 0.2){
   # load required packages
   require(tidyverse)
   require(ggrepel)
@@ -3035,7 +3049,7 @@ vol_plot <- function(limma_output, xvar = "logFC_column", yvar = "p_value_column
   geom_point(aes(col = sig)) +
   scale_colour_manual(values = c("sig" = "#F8766D", "not sig" = "#00BFC4")) +
   geom_hline(yintercept = -log10(alpha)) +
-  xlim(-0.15, 0.2) +
+  xlim(xlim_start, xlim_end) +
   ylim(0, 4) +
   xlab(expression(log[2]("fold change"))) +
   ylab(lab) +
@@ -3057,12 +3071,27 @@ vol_plot <- function(limma_output, xvar = "logFC_column", yvar = "p_value_column
 ### Volcano plots comparing END results at different thresholds
 
 ```{r}
-vol_plot(p_table_7, xvar = "logFC_END_0.1", yvar = "FDR_END_0.1", title = "END with genes in 0.1 percentile", FDR = T)
+plot_END_1 <- vol_plot(p_table_7, xvar = "logFC_END_1", yvar = "FDR_END_1", title = "END with genes in 1 percentile", FDR = T)
 
-vol_plot(p_table_7, xvar = "logFC_END_0.25", yvar = "FDR_END_0.25", title = "END with genes in 0.25 percentile", FDR = T)
+plot_END_0.5 <- vol_plot(p_table_7, xvar = "logFC_END_0.5", yvar = "FDR_END_0.5", title = "END with genes in 0.5 percentile", FDR = T)
 
-vol_plot(p_table_7, xvar = "logFC_END_0.5", yvar = "FDR_END_0.5", title = "END with genes in 0.5 percentile", FDR = T)
+plot_END_0.25 <- vol_plot(p_table_7, xvar = "logFC_END_0.25", yvar = "FDR_END_0.25", title = "END with genes in 0.25 percentile", FDR = T)
+
+plot_END_0.1 <- vol_plot(p_table_7, xvar = "logFC_END_0.1", yvar = "FDR_END_0.1", title = "END with genes in 0.1 percentile", FDR = T)
+
+plot_END_1
+plot_END_0.5
+plot_END_0.25
+plot_END_0.1
 ```
+
+Save plot
+```{r}
+require(cowplot)
+plots_END <- plot_grid(plot_END_1, plot_END_0.5, plot_END_0.25, plot_END_0.1, ncol = 4)
+ggsave("C:/Users/bre227/Documents/R/AD_project/Working/comp_volc_plot_END_thresholds.jpeg", plot = plots_END, device = "jpeg", width = 100, height = 30, units = "cm")
+```
+
 
 
 ### Volcano plots comparing nominal p-values
@@ -3102,8 +3131,88 @@ require(cowplot)
 test <- plot_grid(a, b, c, ncol = 3)
 ggsave("C:/Users/bre227/Documents/R/AD_project/Working/comp_volc_plot_root_genes.jpeg", plot = test, device = "jpeg", width = 100, height = 30, units = "cm")
 
-require(cowplot)
 test <- plot_grid(d, e, f, ncol = 3)
 ggsave("C:/Users/bre227/Documents/R/AD_project/Working/comp_volc_plot_networks.jpeg", plot = test, device = "jpeg", width = 100, height = 30, units = "cm")
+```
+
+### Analysis of different genes involved
+
+The Human Papillomavirus Infection pathway is the most significant (network ID “hsa05165”). That network contains 152 genes, as set out in MV’s ‘gene_clusters_expression.RData’ document, but when filtered for those that were DE in the original limma, had 11 genes. Get their names
+
+```{r}
+# extract probe IDs for hsa05165
+hsa05165_probes <- names(clst_tidy_3[["hsa05165"]][-1])
+
+# get metadata for those probes
+hsa05165_genes <- pid_all[pid_all$probe_id %in% hsa05165_probes, ]
+
+# join with original limma results
+hsa05165_limma <- dplyr::left_join(hsa05165_genes, 
+                                   dplyr::select(sig_PET_pos_v_neg, -gene_symbol, -entrez_id, -ensembl_id), 
+                                   by = "probe_id")
+
+# create volcano plot
+vol_plot(hsa05165_limma, xvar = "logFC", yvar = "P.Value", title = "Original limma results for human papillomavirus infection network", FDR = F, xlim_start = -0.3, xlim_end = 0.4)
+
+```
+
+# ROSMAP data
+
+### Read in data
+```{r}
+# read in expression data
+rosmap_data <- read.delim("C:/Users/bre227/Dropbox/eQTL/Data/ROSMAP_Data/ROSMAP_arrayExpression_normalized.tsv")
+
+# read in metadata
+rosmap_meta <- read.csv("C:/Users/bre227/Dropbox/eQTL/Data/ROSMAP_Data/ROSMAP_clinical.csv")
+rosmap_meta$projid <- as.character(rosmap_meta$projid) # to facilitate binding later
+```
+
+### Transpose and add metadata 
+```{r}
+# create vector of gene symbols
+gene_symbols <- as.character(rosmap_data$Symbol)
+
+# create vector of IDs
+rosmap_ids <- as.character(colnames(rosmap_data)[4:length(colnames(rosmap_data))])
+rosmap_ids <- gsub("ROS_|MAP_", "", rosmap_ids) # remove the 'ROS' and 'MAP' prefixes
+
+# remove first 3 columns ("ProbeID", "TargetID", and "Symbol") to leave just expression data
+rosmap_data1 <- as_tibble(rosmap_data[, -c(1:3)])
+rosmap_data1 <- as_tibble(t(rosmap_data1)) # transpose to put samples in rows, genes in columns
+head(rosmap_data1)
+
+# add colnames (gene symbols)
+colnames(rosmap_data1) <- gene_symbols
+
+# add column with sample IDs
+rosmap_data1$sample_id <- rosmap_ids
+
+# join with metadata and reorder
+rosmap_data2 <- dplyr::left_join(rosmap_data1,
+                                 dplyr::select(rosmap_meta, projid, study, age_at_visit_max, msex, braaksc),
+                                 by = c("sample_id" = "projid"))
+rosmap_data2 <- dplyr::select(rosmap_data2, sample_id, study, age_at_visit_max, msex, braaksc, everything())
+```
+
+### Run PCA to see whether there is any clustering
+```{r}
+# run PCA
+pca_rosmap <- prcomp(rosmap_data2[6:ncol(rosmap_data2)], center = T, scale. = T)
+
+library(ggfortify)
+
+# colour by study ("Ros" or "MAP") 
+autoplot(pca_rosmap, data = rosmap_data2, colour = "study", label = T) +
+  viridis::scale_colour_viridis(option = "viridis", discrete = T)
+
+# colour by sex 
+autoplot(pca_rosmap, data = dplyr::filter(rosmap_data2, !is.na(msex)), colour = "msex", label = T) +
+  viridis::scale_colour_viridis(option = "viridis", discrete = T)
+
+# colour by braaksc
+autoplot(pca_rosmap, data = rosmap_data2, colour = "braaksc", label = T) +
+  viridis::scale_colour_viridis(option = "viridis", discrete = T)
+
 ```
 
