@@ -1,211 +1,94 @@
 ---
-title: "R Notebook - AD Project"
+title: "AD project - summary to date"
 author: "Ian Brettell"
+date: "28 February 2018"
 output:
-  html_notebook:
+  html_document:
     number_sections: yes
     toc: yes
     toc_float: yes
-  html_document:
-    df_print: paged
-    toc: yes
+    keep_md: true
 ---
 
-# Expression data
-
-Initial setup:
-```{r setup, eval = FALSE, echo = F}
-install.packages("here")
-install.packages("tidyverse", dependencies = TRUE)
-install.packages("rafalib")
-install.packages("dummies")
-source("https://bioconductor.org/biocLite.R")
-biocLite("limma")
-install.packages("yaml")
-install.packages("backports")
-install.packages("reshape2")
-install.packages("viridis")
-biocLite("made4")
-install.packages("caret")
-install.packages('e1071', dependencies=TRUE)
-install.packages("ggfortify")
-install.packages("cluster")
-install.packages("factoextra")
-biocLite("Biobase")
-biocLite("limma")
-biocLite("pd.huex.1.0.st.v2")
-biocLite("huex10sttranscriptcluster.db")
-install.packages("VennDiagram")
-install.packages("Grid")
-biocLite("gage")
-biocLite("GSEABase")
-biocLite("KEGGREST")
-install.packages("rjson")
-# Note: Installing bioconductor created issues with creating the markdown preview, which appears to be fixed by installing the `yaml`, `backports` and `reshape2` packages afterwards.
-```
-
 ***
-*19 December 2017*
 
-## Run analysis on expression data
+# Gene expression and network analysis
 
-I was using the wrong ID data previously - we will run the above again substituting the correct data.
-
-### Import files
+## Load data
 
 ```{r}
+require(RCurl)
+# expression data 
 exdata <- read.delim("~/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression.txt", sep = "", header = T)
-dim(exdata)
-head(exdata)
-metadata <- read.delim("~/Dropbox/eQTL/Data/aibl-ids-6.0.0-201712010300.txt", sep = "\t", header = T)
-dim(metadata)
-head(metadata)
 ids2 <- read.delim("~/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression_IDs_UpdtdDec2017.txt", sep = " ")
 colnames(exdata) <- as.vector(ids2$x) # replace colnames with ids2
 
-# filter for those in ids2
-metadata2 <- metadata[(metadata$AIBL.Id %in% ids2$x) & (metadata$Collection == "1"), ]
-dim(metadata2)
-rm(metadata)
-```
-
-***
-
-### Tidy and combine data
-
-Load packages
-
-```{r, results = "hide", message = F}
-library(tidyverse)
-```
-
-Add age column and apoe4 columns
-
-```{r}
-metadata2$Age <- as.numeric((as.Date(metadata2$Progress.Summary.Date.of.NP.assessment,format=c("%d/%m/%Y")))-(as.Date(paste("15",substr(metadata2$Demographic.YearMonthOfBirth,start=5,stop=6),substr(metadata2$Demographic.YearMonthOfBirth,start=1,stop=4),sep="/"),format = c("%d/%m/%Y"))))/365.25
-summary(metadata2$Age)
-```
-
-Histogram of age
-
-```{r}
-hist(metadata2$Age, xlab = "Age", main = "Distribution of AIBL sample ages")
-```
-
-```{r}
-unique(metadata2$Demographic.ApoE.genotype)
-metadata2$apoe4 <- as.factor(ifelse(metadata2$Demographic.ApoE.genotype=="E2/E2"|metadata2$Demographic.ApoE.genotype=="E3/E2"|metadata2$Demographic.ApoE.genotype=="E3/E3",0,ifelse(metadata2$Demographic.ApoE.genotype=="E4/E2"|metadata2$Demographic.ApoE.genotype=="E4/E3"|metadata2$Demographic.ApoE.genotype=="E4/E4",1,NA)))
-metadata2 %>% 
-  group_by(apoe4) %>% 
-  summarise(no_rows = length(apoe4))
-```
-
-Create binary PET status
-
-```{r}
-metadata2$PET <- as.factor(ifelse(metadata2$Image.PET.Amyloid.PIB_NAV.Status == "Positive" | metadata2$Image.PET.Amyloid.Florbetapir.Status== "Positive" | metadata2$Image.PET.Amyloid.Flutemetamol.Status == "Positive", "POS", ifelse(metadata2$Image.PET.Amyloid.PIB_NAV.Status == "Negative" | metadata2$Image.PET.Amyloid.Florbetapir.Status== "Negative" | metadata2$Image.PET.Amyloid.Flutemetamol.Status == "Negative", "NEG",NA)))
-metadata2 %>% 
-  group_by(PET) %>% 
-  summarise(no_rows = length(PET))
-```
-
-Extract metadata for columns of interest
-
-```{r}
-meta2 <- dplyr::select(metadata2, 
-                AIBL.Id,
-                Demographic.Sex,
-                PET,
-                apoe4,
-                Age)
-## write table
-# write.table(meta2, "C:/Users/bre227/Documents/R/AD_project/Working/key_metadata.txt", col.names = T, row.names = F, quote = F, sep = "\t")
-```
-
-
-***
-
-### Create initial exploratory plots
-
-***
-Import metadata
-```{r}
-require(RCurl)
+# metadata
 meta2 <- read.delim(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/key_metadata.txt"), header = T)
-
-# make apoe4 a factor (for ease of plotting later)
-meta2$apoe4 <- as.factor(meta2$apoe4)
 ```
+
+
+## Create initial exploratory plots
+
+Histogram of cohort's age
+
+```{r}
+hist(meta2$Age)
+```
+
 
 Plot for whole dataset
 ```{r}
+library(tidyverse)
 exdata1 <- as_tibble(exdata)
 exdata1 <- as_tibble(t(exdata1)) # transpose to put samples in rows, genes in columns
 colnames(exdata1) <- rownames(exdata) # add genes names
 exdata1$AIBL.Id <- as.integer(colnames(exdata)) # add 'AIBL.Id' column
-exdata2 <- dplyr::left_join(meta2, exdata1, by = "AIBL.Id") %>% 
+exdata2 <- left_join(meta2, exdata1, by = "AIBL.Id") %>% 
   na.omit # add metadata and remove PET and apoe4 columns with 'NA'
 rownames(exdata2) <- exdata2$AIBL.Id # to ensure the labels in the plots reflect the AIBL.Ids
-exdata2[1:10]
+dim(exdata2)
 ```
 
 Run PCA
-```{r}
+```{r, message = F}
 pca <- prcomp(exdata2[6:22016], center = T, scale. = T) # run PCA
-```
-
-```{r}
-plot(pca, type = "l")
-```
-
-Another, better version of the scree plot using the package `factoextra`.
-```{r}
+# plot scree for PCA
 library(factoextra)
 fviz_eig(pca)
 ```
 
+PCA scatterplot for PET status 
 ```{r}
 library(ggfortify)
 autoplot(pca, data = exdata2, colour = "PET", label = T) +
   viridis::scale_colour_viridis(option = "viridis", discrete = T)
 ```
 
+PET scatterplot for *apoe4* status
 ```{r}
 library(ggfortify)
 autoplot(pca, data = exdata2, colour = "apoe4", label = T)
 ```
-*Consider excluding outlier individuals with AIBL.Ids 771 and 918.*
 
 ```{r}
 qqnorm(pca$x[,2], pch = 20)
 ```
 
-
-### Use `limma` to analyse expression data.
-
-We first create an 'ExpressionSet' with genes on rows, and samples on columns, following the guide here: <https://www.bioconductor.org/packages/3.7/bioc/vignettes/Biobase/inst/doc/ExpressionSetIntroduction.pdf>
-
-```{r, results = "hide", message = F}
-library(Biobase)
-```
-
-*20 December 2017*
-
-Run limma on the expression data, having excluded the outliers (AIBL.Ids **771**, **914** and **918**)
+Exclude outliers and run PCA again
 
 ```{r}
-exdata3 <- dplyr::filter(exdata2, AIBL.Id != "771" & AIBL.Id != "914" & AIBL.Id != "918")
+exdata3 <- filter(exdata2, AIBL.Id != "771" & AIBL.Id != "914" & AIBL.Id != "918")
 ```
 
 Run PCA
 ```{r}
 pca2 <- prcomp(exdata3[6:22016], center = T, scale. = T) # run PCA
-```
-
-```{r}
 library(factoextra)
 fviz_eig(pca2)
 ```
+
+Plot without outliers (PET)
 
 ```{r}
 library(ggfortify)
@@ -213,9 +96,21 @@ autoplot(pca2, data = exdata3, colour = "PET", label = T, label.label = "AIBL.Id
   viridis::scale_colour_viridis(option = "viridis", discrete = T)
 ```
 
+Plot without outliers (*apoe4*)
+
 ```{r}
 library(ggfortify)
 autoplot(pca2, data = exdata3, colour = "apoe4", label = T, label.label = "AIBL.Id")
+```
+
+***
+
+## Use `limma` to analyse expression data.
+
+We first create an 'ExpressionSet' with genes on rows, and samples on columns, following the guide here: <https://www.bioconductor.org/packages/3.7/bioc/vignettes/Biobase/inst/doc/ExpressionSetIntroduction.pdf>
+
+```{r, results = "hide", message = F}
+library(Biobase)
 ```
 
 ```{r}
@@ -223,6 +118,10 @@ exprs <- as.matrix(t(exdata3[,6:22016])) # leaving behind the first 5 metadata c
 minimalSet <- ExpressionSet(assayData = exprs)
 pData <- exdata3[,1:5]
 summary(pData)
+```
+
+```{r, results = "hide", message = F}
+library(limma)
 ```
 
 ```{r}
@@ -249,15 +148,6 @@ fit2 <- eBayes(fit2)
 Get the genes differentially expressed in each comparison
 
 ```{r}
-topTable(fit2, coef = "apoe4_for_PET_yes")
-topTable(fit2, coef = "apoe4_for_PET_no")
-topTable(fit2, coef = "PET_for_apoe4_yes")
-topTable(fit2, coef = "PET_for_apoe4_no")
-```
-There appear to be bigger differences between the expression levels of those that test positive and negative for PET than for those that have and do not have the apoe4 genes, although all are significant.
-
-
-```{r}
 res1 <- topTable(fit2, coef = "apoe4_for_PET_yes", n = Inf)
 res2 <- topTable(fit2, coef = "apoe4_for_PET_no", n = Inf)
 res3 <- topTable(fit2, coef = "PET_for_apoe4_yes", n = Inf)
@@ -271,14 +161,13 @@ length(which(res4$P.Value < 0.05))
 
 Probe IDs are set in the 'res' data frames as rownames. Create separate column for rownames. Need to do it now, because when `filter()` is applied below, it removes the rownames.
 
-```{r}
+```{r, warning = F}
 for (i in ls(pattern = "res")){
   x <- get(i)
   x$probe_id <- rownames(x)
   assign(i, x)
 }
 ```
-
 
 Get list of genes that show significantly different expression between contrasts
 ```{r}
@@ -290,13 +179,11 @@ signif_PET_for_apoe4_no <- filter(res4, P.Value < 0.05)
 rm(list = ls(pattern = "res")) # remove results to clear working memory
 ```
 
-
 ## Get gene identifiers for microarray probes and identify significant genes.
 
-*Used JD's code from 'AIBL_Gene_Expression_SetUp_Dec82017.R'*
+*Using JD's code from 'AIBL_Gene_Expression_SetUp_Dec82017.R'*
 
-
-```{r}
+```{r, message = F, warning = F, cache = T}
 library(pd.huex.1.0.st.v2)
 library(huex10sttranscriptcluster.db)
   
@@ -345,13 +232,12 @@ length(entz)
     
 ```
 
-
 ## Match probes, gene symbols, Ensembl IDs, and Entrez IDs with the list of statistically significant genes.
 
 Create data frame of all probe matches with identifiers
 
 ```{r}
-pid_symb <-  data.frame(xx1)
+pid_symb <- data.frame(xx1)
 pid_symb$probe_id <- rownames(pid_symb)
 
 pid_ens <- data.frame(xx3.1)
@@ -360,26 +246,20 @@ pid_ens$probe_id <- rownames(pid_ens)
 pid_ent <- data.frame(xx4.1)
 pid_ent$probe_id <- rownames(pid_ent)
 
-pid_all <- left_join(pid_symb, pid_ent, by = "probe_id") %>% 
-  left_join(y = pid_ens, by = "probe_id") %>% 
-  rename(xx1 = "gene_symbol",
-         xx4.1 = "entrez_id",
-         xx3.1 = "ensembl_id") %>% 
+pid_all <- dplyr::left_join(pid_symb, pid_ent, by = "probe_id") %>% 
+  dplyr::left_join(y = pid_ens, by = "probe_id") %>% 
+  dplyr::rename(gene_symbol = "xx1",
+                entrez_id = "xx4.1",
+                ensembl_id = "xx3.1") %>% 
   dplyr::select(probe_id, everything())
 
-# tidy environment
-rm(list = ls(pattern = "xx"))
-rm(list = c("x", "x3", "x4"))
-rm(list = c("pid_ens", "pid_ent"))
-
-## write table
-# write.table(pid_all, "C:/Users/bre227/Documents/R/AD_project/Working/affy_probes_annotated.txt", row.names = F, col.names = T, quote = F, sep = "\t")
+write.table(pid_all, "~/Desktop/Uni Air/CSIRO/AD_project/Working/affy_probes_annotated.txt", row.names = F, col.names = T, quote = F, sep = "\t")
 
 # find how many probes are annotated
 length(which(pid_all$probe_id %in% rownames(exdata)))
 ```
 
-Combine lists of significant genes for each contrast.
+Combine lists of significant genes for each contrast. Note that combined counts of significant genes for all four contrasts is 3030.
 
 ```{r}
 signif_all <- full_join(signif_apoe4_for_PET_yes, signif_apoe4_for_PET_no, by = "probe_id") %>%
@@ -390,17 +270,18 @@ signif_all <- dplyr::select(signif_apoe4_for_PET_yes, probe_id, P.Value) %>%
   full_join(dplyr::select(signif_apoe4_for_PET_no, probe_id, P.Value), by = "probe_id") %>% 
   full_join(dplyr::select(signif_PET_for_apoe4_yes, probe_id, P.Value), by = "probe_id") %>% 
   full_join(dplyr::select(signif_PET_for_apoe4_no, probe_id, P.Value), by = "probe_id") %>% 
-  rename(P.Value.x = "P.Value.c1", 
-         P.Value.y = "P.Value.c2", 
-         P.Value.x.x = "P.Value.c3", 
-         P.Value.y.y = "P.Value.c4")
+  dplyr::rename(P.Value.c1 = "P.Value.x", 
+         P.Value.c2 = "P.Value.y", 
+         P.Value.c3 = "P.Value.x.x", 
+         P.Value.c4 = "P.Value.y.y")
 
 nrow(signif_all)
 ```
-Therefore `r nrow(signif_all)` genes are expressed differentially across at least two contrasts
+Therefore 2438 genes are expressed differentially across at least two contrasts
 
 
 Bind gene ids to 'signif_all'
+
 ```{r}
 sig_all2 <- left_join(signif_all, pid_all, by = "probe_id")
 ```
@@ -421,7 +302,7 @@ So are all probe_ids in the expression data in 'pid_symb'?
 ```{r}
 length(setdiff(rownames(exdata), pid_symb$probe_id))
 ```
-`r length(setdiff(rownames(exdata), pid_symb$probe_id))`/22,011 probes are not accounted for in the annotation data?
+7,186/22,011 probes are not accounted for in the annotation data?
 
 Confirm this:
 
@@ -429,12 +310,9 @@ Confirm this:
 length(which(rownames(exdata) %in% pid_all$probe_id == "TRUE"))
 ```
 
+#### Venn diagram of overlapping genes
 
-*Ask JD about this ^^*
-
-## Make Venn diagram of overlapping genes
-
-```{r, message = F}
+```{r, message = F, cache = T}
 library(VennDiagram)
 grid.newpage()
 venn <- draw.quad.venn(area1 = length(which(!is.na(sig_all2$P.Value.c1))),
@@ -454,19 +332,19 @@ venn <- draw.quad.venn(area1 = length(which(!is.na(sig_all2$P.Value.c1))),
                n1234 = length(which(!is.na(sig_all2$P.Value.c1) & !is.na(sig_all2$P.Value.c2) & !is.na(sig_all2$P.Value.c3) & !is.na(sig_all2$P.Value.c4))),
                category = c("apoe4_for_PET_yes", "apoe4_for_PET_no", "PET_for_apoe4_yes", "PET_for_apoe4_no"),
                cat.pos = c(0, 0, 0, 0))
-
 ```
-Many of the same genes (265) are differentially expressed between:
-*PET pos/neg when they have the apoe4 allele; and
-*apoe4 yes/no when they are negative for PET
 
-^ These must be genes that can protect against AD.
+Many of the same genes (265) are differentially expressed between:
+* PET pos/neg when they have the apoe4 allele; and
+* apoe4 yes/no when they are negative for PET
+
+These could be genes that can protect against AD.
 
 Many of the same genes (189) are also differentially expressed between:
-*PET pos/neg when they do not have the apoe4 allele; and
-*apoe4 yes/no when they are positive for PET 
+* PET pos/neg when they do not have the apoe4 allele; and
+* apoe4 yes/no when they are positive for PET 
 
-^ These latter genes must be acting independently of the apoe4 network to cause AD.
+These latter genes must be acting independently of the apoe4 network to cause AD.
 
 Find out how many people are in each group:
 
@@ -477,13 +355,12 @@ length(which(test$PET == "POS" & test$apoe4 == "0"))
 length(which(test$PET == "NEG" & test$apoe4 == "1"))
 length(which(test$PET == "NEG" & test$apoe4 == "0"))
 ```
+
 This suggests that more people tend to either have apoe4 and AD, or not have apoe4 and not have AD, than otherwise.
 
 ***
 
-*21 December 2017*
-
-We have carried out pairwise contrasts for PET and apoe4, but we haven't yet compared PET-pos v PET-neg. We'll do that now.
+## Compare expression profiles between PET-pos and PET-neg groups
 
 Create design matrix
 
@@ -506,7 +383,7 @@ topTable(fit4, adjust = "BH")
 ```{r}
 results_PETposvneg <- topTable(fit4, n = Inf)
 results_PETposvneg$probe_id <- rownames(results_PETposvneg)
-signif_PET_pos_v_neg <- dplyr::filter(results_PETposvneg, P.Value < 0.05)
+signif_PET_pos_v_neg <- filter(results_PETposvneg, P.Value < 0.05)
 dim(signif_PET_pos_v_neg)
 ```
 
@@ -544,7 +421,7 @@ colnames(sig_direct_pairs)[2] <- "P.Value_PET"
 colnames(sig_direct_pairs)[3] <- "P.Value_apoe4"
 ```
 
-```{r, message = F}
+```{r, message = F, cache = T, warning = F}
 library(VennDiagram)
 grid.newpage()
 venn2 <- draw.pairwise.venn(
@@ -557,141 +434,26 @@ venn2 <- draw.pairwise.venn(
 
 ***
 
-## Get KEGG results for PET yes/no genes
+# SNP and eQTL analysis
 
-Attach gene data to PET 
-```{r}
-library(tidyverse)
-sig_PET_pos_v_neg <- left_join(signif_PET_pos_v_neg, pid_all, by = "probe_id")
-sig_PET_pos_v_neg$probe_id <- as.character(sig_PET_pos_v_neg$probe_id)# make probe id column a character vector to make merging easier later
-length(which(!is.na(sig_PET_pos_v_neg$gene_symbol))) # to get number of genes with gene IDs
-```
+Import IDs for genotyped SNPs and proxy SNPs (those in LD with the genotyped SNPs), and annotate them with gene names
 
-Following the vignette for the `gage` package, we create vectors of samples for PET pos and neg conditions
-```{r}
-library(gage)
-pet_pos <- meta2$AIBL.Id[meta2$PET == "POS" & !is.na(meta2$PET)]
-pet_neg <- meta2$AIBL.Id[meta2$PET == "NEG" & !is.na(meta2$PET)]
-```
-
-Create a matrix of 'exdata' only for probes that were significant and have gene_symbols (i.e. were identified)
-
-```{r}
-sig_probes <- sig_PET_pos_v_neg[!is.na(sig_PET_pos_v_neg$gene_symbol), 7:8]
-data <- exdata[rownames(exdata) %in% sig_probes$probe_id, ]
-data$probe_id <- rownames(data)
-data <- dplyr::left_join(data, sig_probes, by = "probe_id")
-rownames(data) <- data$gene_symbol
-data$probe_id <- NULL # remove redundant columns
-data$gene_symbol <- NULL
-data <- data[, colnames(data) %in% exdata3$AIBL.Id] #removing NAs and outliers
-data <- as.matrix(data)
-str(data)
-```
-
-Create gene set input data based on significant genes found in the PET pos v neg contrast, and which also had identifiers
-
-```{r}
-library(GSEABase)
-# With gene set identifier and description
-gns <- as.vector(sig_PET_pos_v_neg$gene_symbol[!is.na(sig_PET_pos_v_neg$gene_symbol)])
-gns1 <- GeneSet(gns, geneIdType = SymbolIdentifier(), setName = "PET_pos_v_neg")
-```
-
-
-*8 January 2017*
-
-Before embarking on analysis using gage, we want to classify the significant genes into gene sets. First we attempt this using the g:GOSt function on the g:Profiler website (<https://biit.cs.ut.ee/gprofiler/>)
-
-```{r}
-write.table(sig_PET_pos_v_neg$gene_symbol[!is.na(sig_PET_pos_v_neg$gene_symbol)], "C:/Users/bre227/Documents/R/AD_project/Working/sig_PET_pos_v_neg_genes.txt",
-            quote = F,
-            col.names = F,
-            row.names = F)
-```
-
-
-**Note**: According to JD, this step should be saved for later. We will therefore attach write the table of 'sig_PET_pos_v_neg' to save us having to run the entire script at startup every day. 
-
-```{r write table of DE genes bewteen PET-pos and -neg}
-write.table(sig_PET_pos_v_neg,
-            "C:/Users/bre227/Documents/R/AD_project/Working/sig_PET_pos_v_neg.txt",
-            sep = "\t")
-```
-
-***
-
-*9 January 2018* 
-
-### Meeting with JD
-
-MolsigDB - database for gene sets applicable for different diseases.
-
-Do correlation analysis on gene set.
-
-Do Chi square on outcome and SNP.
-
-* First take the AIBL SNPs, and find the other SNPs with which they are in LD. (Done)
-
-* Second, record the genotypes of those SNPs, and use them to infer the genotypes of the SNPs with which they are in LD.
-
-* Third, for each AIBL SNP, perform a linear model - lm(expression ~ rs#...), and lm(expression ~ rs#... + age, gender, apoe4)
-
-* Fourth, perform Chisquares for each rs#... and PET status
-
-  + 2000 AIBL SNPs -> chisquare L1
-  + 18,000 LD SNPs -> chisquare L2
-+ **L1 + L2**
-
-### Return to KEGG
-
-To find the gene sets in which our significant genes lie, we can use the KEGG database, using KEGGREST (guide here: <http://bioconductor.org/packages/release/bioc/vignettes/KEGGREST/inst/doc/KEGGREST-vignette.html>.
-
-```{r}
-sig_PET_pos_v_neg <- read.table(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/sig_PET_pos_v_neg.txt"),
-                                header = T)
-library(KEGGREST)
-g <- as.character(sig_PET_pos_v_neg$gene_symbol[!is.na(sig_PET_pos_v_neg$gene_symbol)]) # create vector of gene names (530 unique genes in total)
-kegids <- sapply(g, function(x){
-  keggFind("hsa", x)})
-# save to file to prevent having to run the above each time, because it is time-consuming
-save(kegids, file = "C:/Users/bre227/Documents/R/AD_project/Working/kegids.RData")
-```
-
-# SNP data
-
-*8 December 2017*
-
-Purpose: To determine whether the SNPs that are in LD with those targeted fall within (or without) the same genes
-
-## Initial setup
-
-```{r, eval = FALSE}
-
+```{r setup, eval = FALSE}
 install.packages("tidyverse")
-
 source("https://bioconductor.org/biocLite.R")
 biocLite()
 biocLite("biomaRt")
-
 biocLite("GenomicRanges")
 library(GenomicRanges)
 biocLite("Homo.sapiens")
 library(Homo.sapiens)
-biocLite("stephenturner/annotables")
-library(annotables)
-biocLite("ensemblVEP")
-library(ensemblVEP)
 biocLite("snpStats")
-
 install.packages("MatrixEQTL")
 ```
 
-***
-
 ## Import files
 
-```{r}
+```{r import files}
 aibl_snps <- read.delim("~/Dropbox/eQTL/Data/Expanded SNP set/AIBLgene_SNP_LIST_04032015.tsv")
 snap_edit <- read.delim("~/Dropbox/eQTL/Data/Expanded SNP set/snapResults_edit.txt")
 snap <- read.delim("~/Dropbox/eQTL/Data/Expanded SNP set/snapResults.txt")
@@ -703,7 +465,7 @@ snap <- read.delim("~/Dropbox/eQTL/Data/Expanded SNP set/snapResults.txt")
 
 Note: 'snap_edit' has removed all SNPs from 'snap' that did not have proxies.
 
-```{r}
+```{r combine SNP data sets}
 # How many SNPs are there in snap_edit?
 length(unique(snap_edit$SNP)) # Shows that 2084 - 1527 = 557 have been removed from aibl_snps. 
 # How many genes are there in aibl_snps?
@@ -717,7 +479,7 @@ length(setdiff(aibl_snps$SNP, snap_edit$SNP)) # same number as above - 557 remov
 length(unique(snap_edit$Proxy))
 ```
 
-```{r}
+```{r combine list of SNPs and genes, message = F, warning = F}
 library(tidyverse)
 AIBLdummy <- dplyr::select(aibl_snps, SNP, GENE) # creates dummy data frame with just two variables
 snap2 <- left_join(snap_edit, AIBLdummy, by = "SNP") # combine data frames
@@ -729,17 +491,10 @@ snap2 <- dplyr::select(snap2, SNP, SNP_gene = "GENE", dplyr::everything())# reor
 
 ## Get gene names and locations for AIBL_snps
 
-*19 December 2017*
+Get ensembl ids and loci from BioMart
 
-Create vector of aibl_snps
-
-```{r}
-snps <- as.vector(aibl_snps$SNP)
-```
-
-Get ensembl ids and loci
-
-```{r, results = "hide"}
+```{r create mart for SNPs, results = "hide", cache = T}
+snps <- as.vector(aibl_snps$SNP) # Create vector of aibl_snps
 library(biomaRt)
 listMarts()
 mart_snps <- useMart('ENSEMBL_MART_SNP')
@@ -747,7 +502,7 @@ listDatasets(mart_snps) # lists datasets available
 mart_snps <- useMart('ENSEMBL_MART_SNP', 'hsapiens_snp')
 ```
 
-```{r}
+```{r query biomart for SNPs, cache=T}
 SNP_genes <- getBM(attributes = c("refsnp_id", "allele_1", "minor_allele", "minor_allele_freq", "chr_name", "chrom_start", "chrom_end", "ensembl_gene_stable_id"),
                      filters = "snp_filter",
                      values = snps,
@@ -755,26 +510,21 @@ SNP_genes <- getBM(attributes = c("refsnp_id", "allele_1", "minor_allele", "mino
 ```
 
 See how many SNPs returned results
-```{r}
+```{r how many SNPs returned results}
 length(unique(SNP_genes$refsnp_id))
-```
-
-Create `ensembl_ids' vector of unique ensembl gene ids from 'SNP_genes'
-
-```{r}
-ensembl_ids <- unique(SNP_genes$ensembl_gene_stable_id)
 ```
 
 Use 'ensembl_ids' to get loci and hgnc symbols for genes
 
-```{r, results = "hide"}
+```{r create mart for genes, results = "hide", cache = T}
+ensembl_ids <- unique(SNP_genes$ensembl_gene_stable_id) # Create `ensembl_ids' vector of unique ensembl gene ids from 'SNP_genes'
 listMarts()
 mart_genes <- useMart('ENSEMBL_MART_ENSEMBL')
 listDatasets(mart_genes)
 mart_genes <- useMart('ENSEMBL_MART_ENSEMBL', 'hsapiens_gene_ensembl')
 ```
 
-```{r}
+```{r query biomart for genes names and loci, cache = T}
 ensembl_genes <- getBM(attributes = c("ensembl_gene_id", "chromosome_name", "start_position", "end_position", "strand", "hgnc_symbol", "entrezgene"),
                        filters = "ensembl_gene_id",
                        values = ensembl_ids,
@@ -783,13 +533,13 @@ ensembl_genes <- getBM(attributes = c("ensembl_gene_id", "chromosome_name", "sta
 
 Bind both tables by ensembl_id to give full table of genes associated with the AIBL snps
 
-```{r}
-SNP_genes_full <- left_join(SNP_genes, ensembl_genes, by = c("ensembl_gene_stable_id" = "ensembl_gene_id"))
+```{r create table of annotated AIBL SNPs}
+SNP_genes_full <- dplyr::left_join(SNP_genes, ensembl_genes, by = c("ensembl_gene_stable_id" = "ensembl_gene_id"))
 ```
 
 Remove duplicate rows with "LRG..." in the 'ensembl_gene_stable_id' column
 
-```{r}
+```{r clean table}
 SNP_genes_full <- SNP_genes_full[-grep("LRG", SNP_genes_full$ensembl_gene_stable_id), ]
 dim(SNP_genes_full)
 length(unique(SNP_genes_full$refsnp_id))
@@ -804,22 +554,18 @@ SNP_genes_full$hgnc_symbol <- as.character(SNP_genes_full$hgnc_symbol) # convert
 SNP_genes_full$hgnc_symbol[SNP_genes_full$hgnc_symbol == ""] <- NA # replace blank values with NA
 
 # write table
-write.table(SNP_genes_full, "C:/Users/bre227/Documents/R/AD_project/Working/aibl_snp_genes.txt", sep = "\t", col.names = T, row.names = F, quote = F)
+write.table(SNP_genes_full, "~/Desktop/Uni Air/CSIRO/AD_project/Working/aibl_snp_genes.txt", sep = "\t", col.names = T, row.names = F, quote = F)
 ```
 
-## Get gene names and locations for proxy snps
+***
 
-Create vector of proxy snps
-
-```{r}
-proxy_snps <- as.vector(unique(snap_edit$Proxy))
-length(proxy_snps)
-```
+## Get gene names and locations for proxy SNPs
 
 Get ensembl ids and loci for proxies
 
-```{r, results = "hide"}
-library(biomaRt)
+```{r query biomart for proxy SNP locations and ensembl IDS, results = "hide", cache = T}
+proxy_snps <- as.vector(unique(snap_edit$Proxy)) # Create vector of proxy snps
+length(proxy_snps)
 listMarts()
 mart_snps <- useMart('ENSEMBL_MART_SNP')
 listDatasets(mart_snps) # lists datasets available
@@ -831,8 +577,8 @@ proxy_genes <- getBM(attributes = c("refsnp_id", "chr_name", "chrom_start", "chr
                      mart = mart_snps)
 ```
 
-
 See how many SNPs returned results loci information
+
 ```{r}
 length(unique(proxy_genes$refsnp_id))
 ```
@@ -853,21 +599,21 @@ length(ensembl_ids_proxies)
 
 Use 'ensembl_ids' to get loci and hgnc symbols for genes
 
-```{r, results = "hide"}
+```{r, results = "hide", cache = T}
 listMarts()
 mart_genes <- useMart('ENSEMBL_MART_ENSEMBL')
 listDatasets(mart_genes)
 mart_genes <- useMart('ENSEMBL_MART_ENSEMBL', 'hsapiens_gene_ensembl')
 ```
 
-```{r, results = "hide"}
+```{r, results = "hide", cache = T}
 ensembl_proxy_genes <- getBM(attributes = c("ensembl_gene_id", "chromosome_name", "start_position", "end_position", "strand", "hgnc_symbol"),
                        filters = "ensembl_gene_id",
                        values = ensembl_ids_proxies,
                        mart = mart_genes)
 ```
 
-Bind both tables by ensembl_id to give full table of genes associated with the AIBL snps
+Bind both tables by ensembl_id to give full table of genes associated with the proxy SNPs
 
 ```{r}
 proxy_genes_full <- left_join(proxy_genes, ensembl_proxy_genes, by = c("ensembl_gene_stable_id" = "ensembl_gene_id"))
@@ -883,11 +629,12 @@ length(unique(proxy_gns_uq$refsnp_id))
 length(unique(proxy_gns_uq$hgnc_symbol)) 
 
 # write table
-
-write.table(proxy_genes_full, "C:/Users/bre227/Documents/R/AD_project/Working/proxy_snp_gns.txt", row.names = F, col.names = T, quote = F, sep = "\t")
+write.table(proxy_genes_full, "~/Desktop/Uni Air/CSIRO/AD_project/Working/proxy_snp_gns.txt", row.names = F, col.names = T, quote = F, sep = "\t")
 ```
 
-## 1.5 Determine differences between genes in SNP and proxy lists
+***
+
+## Determine differences between genes in SNP and proxy lists
 
 Find out how many unique genes there are in the SNP and proxy lists
 
@@ -902,75 +649,21 @@ Find out how many proxy genes are different from the SNP genes, and vice versa
 length(setdiff(SNP_genes_full$ensembl_gene_stable_id, proxy_genes_full$ensembl_gene_stable_id))
 length(setdiff(proxy_genes_full$ensembl_gene_stable_id, SNP_genes_full$ensembl_gene_stable_id))
 ```
-So 126/621 genes in the AIBL SNP list  are not in the proxy list, and 608/1103 genes in the proxy list are not in the SNP list.
 
-*22 December 2017*
-
-## g:Profiler test
-
-Used the g:Profiler tool (<https://biit.cs.ut.ee/gprofiler/>) to see whether it could get the location of some of the 9 SNPs that BiomaRt couldn't detect.
-
-Pull out those 9 SNP ids
-
-```{r}
-setdiff(aibl_snps$SNP, SNP_genes_full$refsnp_id)
-```
-
-Write text file
-
-```{r}
-write.table(setdiff(aibl_snps$SNP, SNP_genes_full$refsnp_id), 
-            file = "C:/Users/bre227/Documents/R/AD_project/Working/missing_aibl_snps.txt",
-            quote = F,
-            col.names = F,
-            row.names = F)
-```
-
-Copy and paste text of file into g:SNPense, and then read output.
-
-```{r}
-gout <- read.csv("C:/Users/bre227/Documents/R/AD_Project/Working/missing_aibl_snps_gprofiler_output.csv",
-         header = T,
-         sep = "\t")
-```
-
-Provided details for two of the nine missing SNPs. To test whether it works for all the SNPs that were identified with BioMart:
-
-```{r}
-write.table(as.vector(aibl_snps$SNP),
-            file = "C:/Users/bre227/Documents/R/AD_project/Working/aibl_snps.txt",
-            quote = F,
-            col.names = F,
-            row.names = F)
-
-gout2 <- read.csv("C:/Users/bre227/Documents/R/AD_Project/Working/aibl_snps_gprofiler_output.csv",
-         header = T,
-         sep = "\t")
-```
-
-For how many SNPs can g:Profiler not find location information?
-
-```{r}
-# replace blanks with NA
-gout2$chr_pos[gout2$chr_pos == "Not found"] <- NA 
-length(which(is.na(gout2$chr_pos)))
-```
-
-This suggests that the best approach would be to integrate the two methods (biomaRt and g:Profiler).
+So 127/621 genes in the AIBL SNP list  are not in the proxy list, and 609/1103 genes in the proxy list are not in the SNP list.
 
 ***
 
-*8 January 2018*
-
-## Read in genotype data
+## Read in genotype and expression data
 
 ```{r}
 library(readxl)
 gtypes <- read_excel("~/Dropbox/eQTL/Data/Expanded SNP set/AIBLgene_SNP_Data_by_Gene_Expression_IDs.xlsx",
                 col_names = F)
+exdata <- read.delim("~/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression.txt", sep = "", header = T)
 ```
 
-Note that the AIBL IDs are incorrect in the excel file. We attach the correct IDs using the 'AIBL_Gene_Expression_IDs_UpdtdDec2017.txt' file, **assuming that both sets of IDs, when sorted, correspond with each other**.
+Note that the AIBL IDs are incorrect in the excel file. We attach the correct IDs using the 'AIBL_Gene_Expression_IDs_UpdtdDec2017.txt' file.
 
 ```{r}
 ids2 <- read.delim("~/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression_IDs_UpdtdDec2017.txt", sep = " ")
@@ -992,9 +685,7 @@ gtypes$AIBL_ID_new <- c(NA, NA, NA, "AIBL_ID_new", as.vector(ids2))
 gtypes <- dplyr::select(gtypes, AIBL_ID_new, dplyr::everything()) # reorder to bring AIBL_ID_new to the front
 ```
 
-
-```{r, results = "hide"}
-library(tidyverse)
+```{r}
 gts <- as.tibble(t(gtypes)) # transpose data frame
 gts <- as.tibble(lapply(gts, function(x) { # convert all 'X_X' to NA
   gsub("X_X", NA, x)
@@ -1023,21 +714,21 @@ gts <- gts[-c(1:3), ] # remove extraneous first three rows
 Write table to working folder
 
 ```{r}
-write.table(gts, file = "C:/Users/bre227/Documents/R/AD_project/Working/genotype_data.txt", sep = "\t")
+write.table(gts, file = "~/Desktop/Uni Air/CSIRO/AD_project/Working/genotype_data.txt", sep = "\t")
 ```
 
-*12 January 2018*
+***
 
-## Reformat data to PED and MAP for analysis
+## Association analysis with PLINK (chi square)
 
-In accordance with the guide here: <http://zzz.bwh.harvard.edu/plink/data.shtml>
+### Reformat data to PED and MAP for analysis
 
-*15 January 2018*
+In accordance with the guide here: <http://zzz.bwh.harvard.edu/plink/data.shtml>.
 
-Tried to run PLINK, but it came up with an error in the ped file. Find out what's wrong:
+Create PED file
 
 ```{r}
-ped <- read.table(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/genotype_data.txt"), header = T)
+ped <- read.table("~/Desktop/Uni Air/CSIRO/AD_project/Working/genotype_data.txt", header = T)
 
 # find unique values across genotype data
 as.character(unique(unlist(ped[, 5:ncol(ped)])))
@@ -1061,8 +752,6 @@ length(which(na_gns == T)) # shows that 40 SNPs have no data
 ped <- ped[-which(na_gns == T), ] # remove
 ```
 
-Repeat process above...
-
 Create map file
 
 ```{r}
@@ -1082,7 +771,11 @@ unique(map$chromosome)
 
 Find duplicated SNP entries in the PED and determine whether all the genotype data is also duplicated (in which case we can delete).
 ```{r}
-length(unique(map$snp)) # now only 2,085 out of 2,150 SNPs are unique
+# how many of the SNPs are unique?
+length(unique(map$snp))
+```
+
+```{r, results="hide"}
 # get duplicated rs IDs from MAP file
 map$snp[which(duplicated(map$snp))]
 # create new data frame with genotype data from PED file matching those rs IDs
@@ -1099,13 +792,13 @@ Write map file
 map <- data.frame(lapply(map, function(x){
   gsub(" ", "", x)
 }), stringsAsFactors = F)
-write.table(map, "C:/Users/bre227/Documents/R/AD_project/Working/plink/snp_data.map", row.names = F, col.names = F, quote = F, sep = "\t")
+write.table(map, "~/Desktop/Uni Air/CSIRO/AD_project/Working/plink/snp_data.map", row.names = F, col.names = F, quote = F, sep = "\t")
 ```
 
 Reformat ped into PED format
 ```{r}
 ped2 <- ped[, -c(1:4)] # remove extraneous columns
-meta <- read.table(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/key_metadata.txt"), header = T) # read in metadata
+meta <- read.table("~/Desktop/Uni Air/CSIRO/AD_project/Working/key_metadata.txt", header = T) # read in metadata
 colnames(ped2) <- gsub("X", "", colnames(ped2)) # remove "X" from colnames
 ped2 <- data.frame(t(ped2), stringsAsFactors = F) # transpose ped2
 ped2$AIBL.Id <- rownames(ped2) # make a new column with the row names (AIBL Ids) to use to bind with metadata
@@ -1135,7 +828,18 @@ ped4 <- data.frame(lapply(ped3, function(x){
 ped4[is.na(ped4)] <- "0 0"
 
 # write file
-write.table(ped4, "C:/Users/bre227/Documents/R/AD_project/Working/plink/snp_data.ped", row.names = F, col.names = F, quote = F, sep = "\t")
+write.table(ped4, "~/Desktop/Uni Air/CSIRO/AD_project/Working/plink/snp_data.ped", row.names = F, col.names = F, quote = F, sep = "\t")
+```
+
+Obtain reference allele from BioMart query, in accordance with: <http://zzz.bwh.harvard.edu/plink/dataman.shtml#refallele> 
+```{r}
+# read in table
+snp_gns <- read.delim("~/Desktop/Uni Air/CSIRO/AD_project/Working/aibl_snp_genes.txt", header = T)
+ref_al <- dplyr::select(snp_gns, refsnp_id, minor_allele)
+ref_al <- as.tibble(sapply(ref_al, as.character), stringsAsFactors = F)
+ref_al <- ref_al[!duplicated(ref_al), ]
+
+write.table(ref_al, "~/Desktop/Uni Air/CSIRO/AD_project/Working/plink/ref_alleles.txt", row.names = F, col.names = F, quote = F, sep = "\t")
 ```
 
 I fed the files to PLINK using the following code: `./plink --file snp_data --map3 --noweb --no-fid --no-parents --reference-allele ref_alleles.txt --assoc` and `./plink --file snp_data --map3 --noweb --no-fid --no-parents --reference-allele ref_alleles.txt --fisher`, which created the output files 'plink.assoc' and 'plink.assoc.fisher'. 
@@ -1143,8 +847,8 @@ I fed the files to PLINK using the following code: `./plink --file snp_data --ma
 Take a look at the files.
 
 ```{r}
-pk_ass <- read.table(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/plink/plink.assoc"), na.strings = NA, header = T, fill = T)
-pk_fsh <- read.table(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/plink/plink.assoc.fisher"), na.strings = NA, header = T, fill = T)
+pk_ass <- read.table("~/Desktop/Uni Air/CSIRO/AD_project/Working/plink/plink.assoc", na.strings = NA, header = T, fill = T)
+pk_fsh <- read.table("~/Desktop/Uni Air/CSIRO/AD_project/Working/plink/plink.assoc.fisher", na.strings = NA, header = T, fill = T)
 
 length(which(pk_ass$P < 0.05))
 length(which(pk_fsh$P < 0.05))
@@ -1152,12 +856,12 @@ length(which(pk_fsh$P < 0.05))
 
 Shows that the Fisher exact test output had fewer significant SNPs, so we'll prefer that output.
 
-```{r}
+```{r plink association significant output, warning=F}
 #create table of significant SNPs
 sig_pk <- pk_fsh[(pk_fsh$P < 0.05) == T &!is.na(pk_fsh$P), ]
 dim(sig_pk)
 # merge with gene ids from 'aible_snp_genes.txt' file
-snp_gns <- read.delim(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/aibl_snp_genes.txt"), sep = "\t", header = T)
+snp_gns <- read.delim("~/Desktop/Uni Air/CSIRO/AD_project/Working/aibl_snp_genes.txt", sep = "\t", header = T, stringsAsFactors = F)
 library(dplyr)
 sig_pk <- left_join(sig_pk, snp_gns, by = c("SNP" = "refsnp_id"))
 # note that some SNPs map to multiple genes
@@ -1183,46 +887,29 @@ sig_pk <- dplyr::select(sig_pk,
                  snp_locus = "chrom_start", 
                  gene_start = "start_position", 
                  gene_end = "end_position", 
-                 strand, 
-								 ensembl_id = "ensembl_gene_stable_id", 
-                 hgnc_symbol, 
-								 entrez_id = "entrezgene")
+                 strand, ensembl_id = "ensembl_gene_stable_id", 
+                 hgnc_symbol, entrez_id = "entrezgene")
 
 # write table
-write.table(sig_pk, "C:/Users/bre227/Documents/R/AD_project/Working/sig_PET_pos_v_neg_alleles_annotated.txt", col.names = T, row.names = F, quote = F, sep = "\t")
+write.table(sig_pk, "~/Desktop/Uni Air/CSIRO/AD_project/Working/sig_PET_pos_v_neg_alleles_annotated.txt", col.names = T, row.names = F, quote = F, sep = "\t")
 ```
 
 Combine data with probe id (by entrez id, which is the most annotated of gene ids)
 ```{r}
-probes <- read.delim(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/affy_probes_annotated.txt"), header = T, sep = "\t")
+probes <- read.delim("~/Desktop/Uni Air/CSIRO/AD_project/Working/affy_probes_annotated.txt", header = T, sep = "\t")
 sig_pk <- left_join(sig_pk, probes, by = "entrez_id")
 # remove second ensembl id and gene symbol columns (they have no additional information)
-sig_pk <- dplyr::select(sig_pk, -ensembl_id.y, -gene_symbol) %>% 
-	rename(ensembl_id = "ensembl_id.x")
+sig_pk <- dplyr::select(sig_pk, -ensembl_id.y, -gene_symbol, ensembl_id = "ensembl_id.x")
 
 # add NAs to hgnc_symbol column
 sig_pk$hgnc_symbol[sig_pk$hgnc_symbol == ""] <- NA
 sig_pk$hgnc_symbol <- as.character(sig_pk$hgnc_symbol)
 
 # how many genes?
-length(unique(sig_pk$ensembl_id))
+length(unique(sig_pk$hgnc_symbol))
 ```
 
-
-*17 January 2018*
-
-**JD**: Run permutations (10k). Alternate / full model association tests. Logistic models with covariates: age, gender, apoe4.
-
-Obtain reference allele from BioMart query, in accordance with: <http://zzz.bwh.harvard.edu/plink/dataman.shtml#refallele> 
-```{r}
-# read in table
-snp_gns <- read.delim("C:/Users/bre227/Documents/R/AD_project/Working/aibl_snp_genes.txt", header = T)
-ref_al <- dplyr::select(snp_gns, refsnp_id, minor_allele)
-ref_al <- as.tibble(sapply(ref_al, as.character), stringsAsFactors = F)
-ref_al <- ref_al[!duplicated(ref_al), ]
-
-write.table(ref_al, "C:/Users/bre227/Documents/R/AD_project/Working/plink/ref_alleles.txt", row.names = F, col.names = F, quote = F, sep = "\t")
-```
+## Association analysis with PLINK (logistic regression, incl. covariates)
 
 Write covariate file, in accordance with: <http://zzz.bwh.harvard.edu/plink/data.shtml#covar>
 ```{r}
@@ -1234,40 +921,32 @@ colnames(cov)[colnames(cov) == "Demographic.Sex"] <- "Sex"
 cov$PET <- NULL # because it's already in the PED file
 cov$FID <- cov$AIBL.Id # to make a family ID column - see <http://zzz.bwh.harvard.edu/plink/data.shtml#ped>
 cov <- dplyr::select(cov, FID, IID = "AIBL.Id", everything())
-write.table(cov, "C:/Users/bre227/Documents/R/AD_project/Working/plink/cov.txt", row.names = F, col.names = T, quote = F, sep = "\t")
+write.table(cov, "~/Desktop/Uni Air/CSIRO/AD_project/Working/plink/cov.txt", row.names = F, col.names = T, quote = F, sep = "\t")
 ```
 
-Tried to run `./plink --file snp_data --logistic --genotypic --beta --reference-allele ref_alleles.txt --covar.txt` but it returned the error message: "No file [snp_data.fam] exists."
+Ran files on PLINK with the following command: `./plink --file snp_data --map3 --no-fid --no-parents --logistic --beta --reference-allele ref_alleles.txt --noweb --adjust --covar cov.txt`
 
-So we created a .fam file using `./plink --file snp_data --out snp_data --make-bed --map3 --no-fid --no-parents` and tried again.
-
-Output file created (then renamed) as: 'plink.assoc.logistic.genotype'.
-
-Then ran again without the genotype query: `./plink --file snp_data --map3 --no-fid --no-parents --logistic --beta --reference-allele ref_alleles.txt --noweb --adjust --covar cov.txt`
-
-Also re-ran `--assoc` and `--fisher` with the reference alleles file to ensure conformity with the logistic regression output (and then ran the above code again).
-
-Import just the logistic file (without the genoytpe command).
+Read output
 
 ```{r}
-log <- read.delim("C:/Users/bre227/Documents/R/AD_project/Working/plink/plink.assoc.logistic", header = T, sep = "")
+log <- read.delim("~/Desktop/Uni Air/CSIRO/AD_project/Working/plink/plink.assoc.logistic", header = T, sep = "")
 log <- log[with(log, order(CHR, BP)), ] # sort by chromosome and bp
 
 # Find SNPs that are significant indpendent of covariates
 log2 <- dplyr::select(log[!is.na(log$P), ], -NMISS, -BETA, -STAT) %>% 
   tidyr::spread(key = TEST, value = P)
 
-length(which(log2$ADD < 0.05))
-length(which(log2$Age < 0.05))
-length(which(log2$apoe4 < 0.05))
-length(which(log2$Sex < 0.05))
+length(which(log2$ADD < 0.05)) # tells us how many SNPs were significant
+length(which(log2$Age < 0.05)) # tells us for how many SNPs Age was a significant covariate
+length(which(log2$apoe4 < 0.05)) # tells us for how many SNPs the presence of the apoe4 allele was a significant covariate
+length(which(log2$Sex < 0.05)) # tells us for how many SNPs sex was a significant covariate
 ```
 
 This means there apoe4 and age were significant covariates in *all* but two SNPs.
 
 Let's pull out the SNPs with ADD < 0.05 and annotate them.
 
-```{r}
+```{r, warning=FALSE}
 # pull out SNPs that are significant
 sig_snps_log <- log[log$SNP %in% log2$SNP[which(log2$ADD < 0.05)] & log$TEST == "ADD", ]
 # attach annotation data
@@ -1283,11 +962,11 @@ length(unique(sig_snp_symb$SNP))
 length(unique(sig_snp_symb$hgnc_symbol)) 
 ```
 
-
 See which SNPs are significant below the FDR corrected p-value
+
 ```{r}
 # read adjust file
-log_adj <- read.delim("C:/Users/bre227/Documents/R/AD_project/Working/plink/plink.assoc.logistic.adjusted", header = T, sep = "")
+log_adj <- read.delim("~/Desktop/Uni Air/CSIRO/AD_project/Working/plink/plink.assoc.logistic.adjusted", header = T, sep = "")
 
 nrow(log_adj[log_adj$FDR_BH < 0.05, ])
 ```
@@ -1295,27 +974,25 @@ Therefore there are no SNPs below the FDR corrected p-value.
 
 Find which SNPs and genes are signficant in both the association and logistic regression analyses
 
-```{r}
-intersect(sig_snps_log$SNP, sig_pk$SNP)
-intersect(sig_snps_log$hgnc_symbol, sig_pk$hgnc_symbol)
+```{r, results = "hide"}
+length(intersect(sig_snps_log$SNP, sig_pk$SNP))
 ```
 
-**NOTE** redo association test with permutation before binding the sig_snps_log to the assoc output
+```{r}
+intersect(sig_snps_log$hgnc_symbol, sig_pk$hgnc_symbol) # genes
+```
 
-*18 January 2018*
-
-See whether any genes cited in Apostolova et al. (2018) *Associations of the top 20 ALheimer Disease risk variants with brain amyloidosis* are in our significant SNPs list.
+See whether any genes cited in Apostolova et al. (2018) *Associations of the top 20 Alzheimer Disease risk variants with brain amyloidosis* are in our significant SNPs list.
 
 ```{r}
 # first check how many hits we get with these genes from the original SNPs list
-snp_gns[grep("PICALM|BIN1|CR1|ABCA7|MS4A6A|CLU|FERMT2|DSG2|EPHA1|SORL1|ZCWPW1", snp_gns$hgnc_symbol), ]
 nrow(snp_gns[grep("PICALM|BIN1|CR1|ABCA7|MS4A6A|CLU|FERMT2|DSG2|EPHA1|SORL1|ZCWPW1", snp_gns$hgnc_symbol), ])
 
 # now check how many hits we get with our significant SNPs list
 sig_snps_log[grep("PICALM|BIN1|CR1|ABCA7|MS4A6A|CLU|FERMT2|DSG2|EPHA1|SORL1|ZCWPW1", sig_snps_log$hgnc_symbol), ]
 
 # write file
-write.table(sig_snps_log, "C:/Users/bre227/Documents/R/AD_project/Working/sig_PET_pos_v_neg_snps.txt", row.names = F, col.names = T, quote = F, sep = "\t")
+write.table(sig_snps_log, "~/Desktop/Uni Air/CSIRO/AD_project/Working/sig_PET_pos_v_neg_snps.txt", row.names = F, col.names = T, quote = F, sep = "\t")
 ```
 **Four genes**: *BIN1*, *CLU*, *PICALM*, and *ABCA7*.
 
@@ -1327,43 +1004,19 @@ Ran PLINK again for association, but this time with 10,000 permutations and the 
 Take a look again, and compare to the logistic regression output
 
 ```{r}
-ass <- read.table("C:/Users/bre227/Documents/R/AD_project/Working/plink/plink.assoc", na.strings = NA, header = T, fill = T)
+ass <- read.table("~/Desktop/Uni Air/CSIRO/AD_project/Working/plink/plink.assoc", na.strings = NA, header = T, fill = T)
 sig_ass <- ass[ass$P < 0.05 & is.na(ass$P) == F, ]
 
-perm <- read.table("C:/Users/bre227/Documents/R/AD_project/Working/plink/plink.assoc.mperm", na.strings = NA, header = T, fill = T)
-perm[which(perm$EMP2 < 0.7), ]
+perm <- read.table("~/Desktop/Uni Air/CSIRO/AD_project/Working/plink/plink.assoc.mperm", na.strings = NA, header = T, fill = T)
+perm[which(perm$EMP2 < 0.7), ] # see how many SNPs had an FDR-adjusted p-value of less than 0.7
+nrow(perm[which(perm$EMP2 < 0.05), ])
 ```
 
-Only one SNP has a corrected p-value of less than 0.7!
+Only one SNP has a corrected p-value of less than 0.7! Therefore not persuasive evidence of an effect.
 
 ***
 
-*19 January 2018*
-
-Use Haploview to see if we get the same permutation results as PLINK.
-
-```{r}
-y <- dplyr::select(snp_gns, refsnp_id, chr_name, chrom_start)
-y$loc <- paste(y$chr_name, y$chrom_start, sep = "")
-y$loc <- paste(y$chr_name, y$chrom_start, sep = ":")
-y$chr_name <- NULL
-y$chr_start <- NULL
-y <- y[y$refsnp_id %in% map$snp, ]
-write.table(y, "C:/Users/bre227/Documents/R/AD_project/Working/haploview/snp_locs.info", col.names = F, row.names = F, sep = "\t", quote = F)
-
-
-ped5 <- ped4
-ped5$family_id <- ped5$AIBL.Id
-ped5$paternal_id <- 0
-ped5$maternal_id <- 0
-ped5 <- dplyr::select(ped5, family_id, AIBL.Id, paternal_id, maternal_id, Demographic.Sex, PET, everything())
-
-write.table(ped5, "C:/Users/bre227/Documents/R/AD_project/Working/haploview/snp_data.ped", col.names = F, row.names = F, sep = "\t", quote = F)
-```
-
-Got the same results with an association test with 10,000 permutations - only two SNPs had p < 0.7, and neither was significant.
-
-## eQTL analysis
+## eQTL analysis for whole cohort
 
 Read in data.
 
@@ -1371,16 +1024,14 @@ Read in data.
 exdata <- read.delim("~/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression.txt", sep = "", header = T)
 ids2 <- read.delim("~/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression_IDs_UpdtdDec2017.txt", sep = " ")
 colnames(exdata) <- as.vector(ids2$x) # replace colnames with ids2
-meta <- read.delim("C:/Users/bre227/Documents/R/AD_project/Working/key_metadata.txt", header = T, sep = "\t")
+meta <- read.delim("~/Desktop/Uni Air/CSIRO/AD_project/Working/key_metadata.txt", header = T, sep = "\t")
 ```
 
-### Put into format required by `MatrixEQTL` package.
+### Put into format required by the `MatrixEQTL` package.
 
 #### Covariates file
 
 ```{r}
-library(tidyverse)
-
 # create binary statuses for sex and PET
 meta$Demographic.Sex <- ifelse(meta$Demographic.Sex == "Male", 0, 
                                ifelse(meta$Demographic.Sex == "Female", 1, NA))
@@ -1403,8 +1054,7 @@ rownames(exdata) <- seq(1:nrow(exdata))
 
 #### Genotype file
 
-```{r}
-
+```{r, warning = F}
 # tidy genotype data
 ped6 <- ped[, -c(1:3)]
 ped6 <- left_join(ped6, dplyr::select(snp_gns[!duplicated(snp_gns$refsnp_id), ], refsnp_id, allele_1, minor_allele), by = c("snp" = "refsnp_id")) %>% 
@@ -1417,9 +1067,9 @@ Noticed that for some SNPs the alleles annotated with BioMart differ from the al
 
 We will therefore get another plink output to find calculate which alleles are major and minor when they differ from the BioMart annotations, or when the BioMart annotations seem incorrect. We used the code: `./plink --file snp_data --map3 --noweb --no-fid --no-parents --fisher --out allele_freq`
 
-```{r}
+```{r, warning=FALSE}
 # import plink data on allele frequencies
-pk_frq <- read.table("C:/Users/bre227/Documents/R/AD_project/Working/plink/allele_freq.assoc.fisher", na.strings = NA, header = T, fill = T)
+pk_frq <- read.table("~/Desktop/Uni Air/CSIRO/AD_project/Working/plink/allele_freq.assoc.fisher", na.strings = NA, header = T, fill = T)
 pk_frq <- dplyr::select(pk_frq, snp = SNP, pk_major_allele = A2, pk_minor_allele = A1)
 
 # create comparison data frame
@@ -1470,41 +1120,13 @@ comp$cor_mn <- unlist(apply(comp, 1, function(x){
 }))
 ```
 
-*23 January 2018*
-
 Incorporate adjusted major and minor allele into ped6 and create genotype where:
-*0 = homozygous major allele
-*1 = heterozygous
-*2 = homozygous minor allele
+* 0 = homozygous major allele
+* 1 = heterozygous
+* 2 = homozygous minor allele
 ```{r}
 ped6$allele_1 <- comp$cor_mj
 ped6$minor_allele <- comp$cor_mn
-
-#
-
-test <- ped6[1:5, ]
-
-out <- t(data.frame(apply(test, 1, function(x){ ## WORKS
-  a <- paste(x[2], x[2], sep = " ")
-  b <- paste(x[2], x[3], sep = " ")
-  c <- paste(x[3], x[2], sep = " ")
-  d <- paste(x[3], x[3], sep = " ")
-  results <- sapply(x, function(y){
-    if (is.na(y) == T){
-      y <- NA
-    }
-    else if (y == a & is.na(y) == F){
-      y <- 0
-    }
-    else if (y == b | y == c & is.na(y) == F){
-      y <- 1
-    } 
-    else if (y == d & is.na(y) == F){
-      y <- 2
-    }
-  })
-  data.frame(do.call(rbind, results))
-})))
 
 out <- t(data.frame(apply(ped6, 1, function(x){ ## WORKS - need to change the second function from sapply to lapply
   a <- paste(x[2], x[2], sep = " ")
@@ -1550,7 +1172,7 @@ exdata$probe_id <- rownames(exdata)
 exdata <- dplyr::select(exdata, probe_id, everything())
 ```
 
-#### Finalise covariates file by extracting only those columns (samples) for which we have genotype data
+Finalise covariates file by extracting only those columns (samples) for which we have genotype data
 
 ```{r}
 cns <- c("id", colnames(meta)[colnames(meta) %in% colnames(ped7)])
@@ -1560,18 +1182,19 @@ meta <- meta[, cns]
 Write files
 
 ```{r}
-write.table(ped7, "C:/Users/bre227/Documents/R/AD_project/Working/matrixeqtl/snps.txt", col.names = T, row.names = F, quote = F, sep = "\t")
-write.table(meta, "C:/Users/bre227/Documents/R/AD_project/Working/matrixeqtl/covs.txt", col.names = T, row.names = F, quote = F, sep = "\t")
-write.table(exdata, "C:/Users/bre227/Documents/R/AD_project/Working/matrixeqtl/expr.txt", col.names = T, row.names = F, quote = F, sep = "\t")
+write.table(ped7, "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/snps.txt", col.names = T, row.names = F, quote = F, sep = "\t")
+write.table(meta, "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/covs.txt", col.names = T, row.names = F, quote = F, sep = "\t")
+write.table(exdata, "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/expr.txt", col.names = T, row.names = F, quote = F, sep = "\t")
 ```
 
-Set up parameters for eQTL
+### Set up parameters for eQTL
+
 ```{r}
 library(MatrixEQTL)
 useModel = modelLINEAR
-SNP_file_name = "C:/Users/bre227/Documents/R/AD_project/Working/matrixeqtl/snps.txt"
-expression_file_name = "C:/Users/bre227/Documents/R/AD_project/Working/matrixeqtl/expr.txt"
-covariates_file_name = "C:/Users/bre227/Documents/R/AD_project/Working/matrixeqtl/covs.txt"
+SNP_file_name = "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/snps.txt"
+expression_file_name = "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/expr.txt"
+covariates_file_name = "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/covs.txt"
 output_file_name = tempfile()
 
 pvOutputThreshold = 1e-2
@@ -1579,7 +1202,8 @@ errorCovariance = numeric()
 ```
 
 Load snps data
-```{r}
+
+```{r, message=F}
 snps = SlicedData$new()
 snps$fileDelimiter = "\t"
 snps$fileOmitCharacters = "NA"
@@ -1590,7 +1214,8 @@ snps$LoadFile( SNP_file_name )
 ```
 
 Load gene data
-```{r}
+
+```{r, message=F}
 gene = SlicedData$new()
 gene$fileDelimiter = "\t"
 gene$fileOmitCharacters = "NA"
@@ -1602,7 +1227,7 @@ gene$LoadFile( expression_file_name )
 
 Load covariate data
 
-```{r}
+```{r, message = F}
 cvrt = SlicedData$new()
 cvrt$fileDelimiter = "\t"
 cvrt$fileOmitCharacters = "NA"
@@ -1612,7 +1237,9 @@ cvrt$fileSliceSize = 2000
 cvrt$LoadFile( covariates_file_name )
 ```
 
-```{r}
+### Run Matrix eQTL analysis
+
+```{r, message = F}
  me = Matrix_eQTL_engine(
     snps = snps,
     gene = gene,
@@ -1627,9 +1254,15 @@ cvrt$LoadFile( covariates_file_name )
     noFDRsaveMemory = FALSE)
 ```
 
-Pull out significant SNP-gene relationships
+### Pull out significant SNP-gene relationships
 
-```{r}
+```{r eQTL outputs, warning=F}
+# create table of annotated significant genes (from original limma)
+sig_PET_pos_v_neg <- left_join(signif_PET_pos_v_neg, pid_all, by = "probe_id")
+
+# read in annotated probe table
+pid_all <- read.delim("~/Desktop/Uni Air/CSIRO/AD_project/Working/affy_probes_annotated.txt", header = T, sep = "\t", stringsAsFactors = F)
+
 # pull out eQTLs from output
 eqtls <- me[["all"]][["eqtls"]]
 
@@ -1639,16 +1272,19 @@ dim(sig_eqtls)
 
 # number of unique SNPs
 length(unique(sig_eqtls$snps))
-# number of unique SNP genes
+# number of unique probes
 length(unique(sig_eqtls$gene))
 
 # annotate
-sig_eqtl_snps <- left_join(sig_eqtls, snp_gns, by = c("snps" = "refsnp_id"))
-sig_eqtl_gns <- left_join(sig_eqtls, pid_all, by = c("gene" = "probe_id"))
+sig_eqtls$snps <- as.character(sig_eqtls$snps)
+sig_eqtls$gene <- as.character(sig_eqtls$gene)
+pid_all$probe_id <- as.character(pid_all$probe_id)
+sig_eqtl_snps <- dplyr::left_join(sig_eqtls, snp_gns, by = c("snps" = "refsnp_id"))
+sig_eqtl_gns <- dplyr::left_join(sig_eqtls, pid_all, by = c("gene" = "probe_id"))
 
 # write files
-write.table(sig_eqtl_snps, "C:/Users/bre227/Documents/R/AD_project/Working/eqtl_snps.txt", row.names = F, col.names = T, quote = F, sep = "\t")
-write.table(sig_eqtl_gns, "C:/Users/bre227/Documents/R/AD_project/Working/eqtl_gns.txt", row.names = F, col.names = T, quote = F, sep = "\t")
+write.table(sig_eqtl_snps, "~/Desktop/Uni Air/CSIRO/AD_project/Working/eqtl_snps.txt", row.names = F, col.names = T, quote = F, sep = "\t")
+write.table(sig_eqtl_gns, "~/Desktop/Uni Air/CSIRO/AD_project/Working/eqtl_gns.txt", row.names = F, col.names = T, quote = F, sep = "\t")
 
 # find any hits with the genes implicated in the 2018 study
 nrow(sig_eqtl_snps[grep("PICALM|BIN1|CR1|ABCA7|MS4A6A|CLU|FERMT2|DSG2|EPHA1|SORL1|ZCWPW1", sig_eqtl_snps$hgnc_symbol), ])
@@ -1656,10 +1292,8 @@ nrow(sig_eqtl_gns[grep("PICALM|BIN1|CR1|ABCA7|MS4A6A|CLU|FERMT2|DSG2|EPHA1|SORL1
 
 # see whether any of the SNP genes intersect with the expression genes (i.e. are any of them acting cis?)
 eqtl_snp_gns <- as.vector(na.omit(unique(sig_eqtl_snps$hgnc_symbol)))
-eqtl_snp_gns
 length(eqtl_snp_gns)
 eqtl_de_gns <- as.vector(na.omit(unique(sig_eqtl_gns$gene_symbol)))
-eqtl_de_gns
 length(eqtl_de_gns)
 
 intersect(eqtl_snp_gns, eqtl_de_gns)
@@ -1668,53 +1302,13 @@ intersect(eqtl_snp_gns, eqtl_de_gns)
 
 ***
 
-*24 January 2018*
+## eQTL analysis separately for PET-pos and -neg groups
 
-Attach proxy SNPs to list of significant eqtl aibl snps
+### Find out which AIBL IDs match with PET pos and neg status and create covariates file for them
 
-```{r}
-snp_prx <- dplyr::select(snap2, SNP, Proxy)
-snp_prx <- snp_prx[snp_prx$SNP %in% sig_eqtls$snps, ]
-unique(snp_prx$SNP)
-length(unique(snp_prx$Proxy))
-```
-Just two of the 17 significant eQTL AIBL SNPs had proxy SNPs! But those two are in LD with 12 proxy SNPs.
-
-Find the genes in which those proxy SNPs lie.
-
-```{r}
-snp_prx <- dplyr::left_join(snp_prx, proxy_genes_full, by = c("Proxy" = "refsnp_id"))
-unique(snp_prx$hgnc_symbol)
-length(unique(snp_prx$hgnc_symbol))
-```
-Those proxy SNPs lie within 6 genes (7 less the NA).
-
-So how many genes in total could affect the expression levels of those 12 genes? Combine the list of genes in which both the AIBL and proxy SNPs lie
-
-```{r}
-sig_snps_full <- as.vector(unique(c(unique(sig_eqtl_snps$snps), unique(snp_prx$Proxy))))
-sig_snps_full
-length(sig_snps_full)
-
-sig_eqtl_gns_full <- as.vector(c(unique(as.character(sig_eqtl_snps$hgnc_symbol)), unique(snp_prx$hgnc_symbol)))
-sig_eqtl_gns_full <- na.omit(sig_eqtl_gns_full)
-sig_eqtl_gns_full
-```
-
-#### Find intersection between eQTL genes and original limma results
-```{r}
-intersect_lim_eqtl <- na.omit(intersect(sig_PET_pos_v_neg$gene_symbol, sig_eqtl_gns$gene_symbol))
-intersect_lim_eqtl
-```
-
-
-### Carry out the same eQTL analysis but independently with the PET pos and neg groups
-
-Find out which AIBL IDs match with PET pos and neg status and create covariates file for them
-
-```{r}
+```{r, warning=F}
 # create covariates file for pos status
-PET_pos_covs <- read.delim("C:/Users/bre227/Documents/R/AD_project/Working/matrixeqtl/covs.txt", sep = "\t", header = T)
+PET_pos_covs <- read.delim("~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/covs.txt", sep = "\t", header = T)
 PET_pos_covs <- data.frame(t(PET_pos_covs), stringsAsFactors = F)
 colnames(PET_pos_covs) <- PET_pos_covs[1, ]
 PET_pos_covs$aibl_id <- gsub("X", "", rownames(PET_pos_covs))
@@ -1726,10 +1320,10 @@ PET_pos_covs <- PET_pos_covs[-c(2, nrow(PET_pos_covs)), ] # remove PET and id ro
 PET_pos_covs$id <- rownames(PET_pos_covs)
 PET_pos_covs <- dplyr::select(PET_pos_covs, id, everything())
 rownames(PET_pos_covs) <- NULL
-write.table(PET_pos_covs, "C:/Users/bre227/Documents/R/AD_project/Working/matrixeqtl/pet_pos_covs.txt", col.names = T, row.names = F, quote = F, sep = "\t")
+write.table(PET_pos_covs, "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/pet_pos_covs.txt", col.names = T, row.names = F, quote = F, sep = "\t")
 
 # create covariates file for neg status
-PET_neg_covs <- read.delim("C:/Users/bre227/Documents/R/AD_project/Working/matrixeqtl/covs.txt", sep = "\t", header = T)
+PET_neg_covs <- read.delim("~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/covs.txt", sep = "\t", header = T)
 PET_neg_covs <- data.frame(t(PET_neg_covs), stringsAsFactors = F)
 colnames(PET_neg_covs) <- PET_neg_covs[1, ]
 PET_neg_covs$aibl_id <- gsub("X", "", rownames(PET_neg_covs))
@@ -1741,10 +1335,10 @@ PET_neg_covs <- PET_neg_covs[-c(2, nrow(PET_neg_covs)), ]
 PET_neg_covs$id <- rownames(PET_neg_covs)
 PET_neg_covs <- dplyr::select(PET_neg_covs, id, everything())
 rownames(PET_neg_covs) <- NULL
-write.table(PET_neg_covs, "C:/Users/bre227/Documents/R/AD_project/Working/matrixeqtl/pet_neg_covs.txt", col.names = T, row.names = F, quote = F, sep = "\t")
+write.table(PET_neg_covs, "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/pet_neg_covs.txt", col.names = T, row.names = F, quote = F, sep = "\t")
 ```
 
-Divide out expression data
+### Divide out expression data
 
 ```{r}
 ## Get expression data
@@ -1757,42 +1351,43 @@ exdata <- exdata[, colnames(exdata) %in% colnames(ped7)] # extract only those co
 pos_exdata <- exdata[, colnames(exdata) %in% colnames(PET_pos_covs)]
 pos_exdata$probe_id <- rownames(pos_exdata) # create column for probe ID and reorder
 pos_exdata <- dplyr::select(pos_exdata, probe_id, everything())
-write.table(pos_exdata, "C:/Users/bre227/Documents/R/AD_project/Working/matrixeqtl/pet_pos_expr.txt", col.names = T, row.names = F, quote = F, sep = "\t")
+write.table(pos_exdata, "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/pet_pos_expr.txt", col.names = T, row.names = F, quote = F, sep = "\t")
 
 # for NEG group
 neg_exdata <- exdata[, colnames(exdata) %in% colnames(PET_neg_covs)]
 neg_exdata$probe_id <- rownames(neg_exdata) # create column for probe ID and reorder
 neg_exdata <- dplyr::select(neg_exdata, probe_id, everything())
-write.table(neg_exdata, "C:/Users/bre227/Documents/R/AD_project/Working/matrixeqtl/pet_neg_expr.txt", col.names = T, row.names = F, quote = F, sep = "\t")
+write.table(neg_exdata, "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/pet_neg_expr.txt", col.names = T, row.names = F, quote = F, sep = "\t")
 ```
 
-Divide out genotype data
+### Divide out genotype data
 
 ```{r}
 # read in data
-gtps <- read.delim("C:/Users/bre227/Documents/R/AD_project/Working/matrixeqtl/snps.txt", header = T, sep = "\t")
+gtps <- read.delim("~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/snps.txt", header = T, sep = "\t")
 colnames(gtps) <- gsub("X", "", colnames(gtps))
 
 # for POS group
 pet_pos_gtps <- gtps[, colnames(gtps) %in% colnames(PET_pos_covs)]
 pet_pos_gtps <- cbind(snpid = gtps[, 1], pet_pos_gtps)
-write.table(pet_pos_gtps, "C:/Users/bre227/Documents/R/AD_project/Working/matrixeqtl/pet_pos_gtps.txt", col.names = T, row.names = F, quote = F, sep = "\t")
+write.table(pet_pos_gtps, "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/pet_pos_gtps.txt", col.names = T, row.names = F, quote = F, sep = "\t")
 
 # for NEG group
 pet_neg_gtps <- gtps[, colnames(gtps) %in% colnames(PET_neg_covs)]
 pet_neg_gtps <- cbind(snpid = gtps[, 1], pet_neg_gtps)
-write.table(pet_neg_gtps, "C:/Users/bre227/Documents/R/AD_project/Working/matrixeqtl/pet_neg_gtps.txt", col.names = T, row.names = F, quote = F, sep = "\t")
+write.table(pet_neg_gtps, "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/pet_neg_gtps.txt", col.names = T, row.names = F, quote = F, sep = "\t")
 ```
 
-#### eQTL for POS group
+### eQTL for POS group
 
 Set up parameters for eQTL
+
 ```{r}
 library(MatrixEQTL)
 useModel = modelLINEAR
-SNP_file_name = "C:/Users/bre227/Documents/R/AD_project/Working/matrixeqtl/pet_pos_gtps.txt"
-expression_file_name = "C:/Users/bre227/Documents/R/AD_project/Working/matrixeqtl/pet_pos_expr.txt"
-covariates_file_name = "C:/Users/bre227/Documents/R/AD_project/Working/matrixeqtl/pet_pos_covs.txt"
+SNP_file_name = "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/pet_pos_gtps.txt"
+expression_file_name = "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/pet_pos_expr.txt"
+covariates_file_name = "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/pet_pos_covs.txt"
 output_file_name = tempfile()
 
 pvOutputThreshold = 1e-2
@@ -1800,7 +1395,8 @@ errorCovariance = numeric()
 ```
 
 Load snps data
-```{r}
+
+```{r, message=F}
 snps = SlicedData$new()
 snps$fileDelimiter = "\t"
 snps$fileOmitCharacters = "NA"
@@ -1811,7 +1407,8 @@ snps$LoadFile( SNP_file_name )
 ```
 
 Load gene data
-```{r}
+
+```{r, message = F}
 gene = SlicedData$new()
 gene$fileDelimiter = "\t"
 gene$fileOmitCharacters = "NA"
@@ -1823,7 +1420,7 @@ gene$LoadFile( expression_file_name )
 
 Load covariate data
 
-```{r}
+```{r, message = F}
 cvrt = SlicedData$new()
 cvrt$fileDelimiter = "\t"
 cvrt$fileOmitCharacters = "NA"
@@ -1833,7 +1430,9 @@ cvrt$fileSliceSize = 2000
 cvrt$LoadFile( covariates_file_name )
 ```
 
-```{r}
+Run Matrix eQTL on PET-pos group
+
+```{r, message = F}
  me_pos = Matrix_eQTL_engine(
     snps = snps,
     gene = gene,
@@ -1848,15 +1447,15 @@ cvrt$LoadFile( covariates_file_name )
     noFDRsaveMemory = FALSE)
 ```
 
-#### eQTL for NEG group
+### eQTL for NEG group
 
 Set up parameters for eQTL
 ```{r}
 library(MatrixEQTL)
 useModel = modelLINEAR
-SNP_file_name = "C:/Users/bre227/Documents/R/AD_project/Working/matrixeqtl/pet_neg_gtps.txt"
-expression_file_name = "C:/Users/bre227/Documents/R/AD_project/Working/matrixeqtl/pet_neg_expr.txt"
-covariates_file_name = "C:/Users/bre227/Documents/R/AD_project/Working/matrixeqtl/pet_neg_covs.txt"
+SNP_file_name = "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/pet_neg_gtps.txt"
+expression_file_name = "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/pet_neg_expr.txt"
+covariates_file_name = "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/pet_neg_covs.txt"
 output_file_name = tempfile()
 
 pvOutputThreshold = 1e-2
@@ -1864,7 +1463,8 @@ errorCovariance = numeric()
 ```
 
 Load snps data
-```{r}
+
+```{r, message = F}
 snps = SlicedData$new()
 snps$fileDelimiter = "\t"
 snps$fileOmitCharacters = "NA"
@@ -1875,7 +1475,8 @@ snps$LoadFile( SNP_file_name )
 ```
 
 Load gene data
-```{r}
+
+```{r, message = F}
 gene = SlicedData$new()
 gene$fileDelimiter = "\t"
 gene$fileOmitCharacters = "NA"
@@ -1887,7 +1488,7 @@ gene$LoadFile( expression_file_name )
 
 Load covariate data
 
-```{r}
+```{r, message = F}
 cvrt = SlicedData$new()
 cvrt$fileDelimiter = "\t"
 cvrt$fileOmitCharacters = "NA"
@@ -1897,7 +1498,9 @@ cvrt$fileSliceSize = 2000
 cvrt$LoadFile( covariates_file_name )
 ```
 
-```{r}
+Run Matrix eQTL on PET-neg group
+
+```{r, message = F}
  me_neg = Matrix_eQTL_engine(
     snps = snps,
     gene = gene,
@@ -1912,7 +1515,7 @@ cvrt$LoadFile( covariates_file_name )
     noFDRsaveMemory = FALSE)
 ```
 
-#### Pull out significant SNP-gene relationships for POS group
+### Pull out significant SNP-gene relationships for POS group
 
 ```{r, warning = F}
 # pull out eQTLs from output
@@ -1927,8 +1530,8 @@ pos_sig_eqtl_snps <- left_join(pos_sig_eqtls, snp_gns, by = c("snps" = "refsnp_i
 pos_sig_eqtl_gns <- left_join(pos_sig_eqtls, pid_all, by = c("gene" = "probe_id"))
 
 # write files
-write.table(pos_sig_eqtl_snps, "C:/Users/bre227/Documents/R/AD_project/Working/pos_eqtl_snps.txt", row.names = F, col.names = T, quote = F, sep = "\t")
-write.table(pos_sig_eqtl_gns, "C:/Users/bre227/Documents/R/AD_project/Working/pos_eqtl_gns.txt", row.names = F, col.names = T, quote = F, sep = "\t")
+write.table(pos_sig_eqtl_snps, "~/Desktop/Uni Air/CSIRO/AD_project/Working/pos_eqtl_snps.txt", row.names = F, col.names = T, quote = F, sep = "\t")
+write.table(pos_sig_eqtl_gns, "~/Desktop/Uni Air/CSIRO/AD_project/Working/pos_eqtl_gns.txt", row.names = F, col.names = T, quote = F, sep = "\t")
 
 # number of unique SNPs
 length(unique(pos_sig_eqtl_snps$snps))
@@ -1949,7 +1552,7 @@ intersect(pos_eqtl_snp_gns, pos_eqtl_de_gns)
 ```
 28 SNPs in 31 unique genes (32 less NA) affecting 48 unique genes (49 less NA). None of those genes are shared.
 
-#### Pull out significant SNP-gene relationships for NEG group
+### Pull out significant SNP-gene relationships for NEG group
 
 ```{r, warning=F}
 # pull out eQTLs from output
@@ -1967,8 +1570,8 @@ neg_sig_eqtl_snps <- left_join(neg_sig_eqtls, snp_gns, by = c("snps" = "refsnp_i
 neg_sig_eqtl_gns <- left_join(neg_sig_eqtls, pid_all, by = c("gene" = "probe_id"))
 
 # write files
-write.table(neg_sig_eqtl_snps, "C:/Users/bre227/Documents/R/AD_project/Working/neg_eqtl_snps.txt", row.names = F, col.names = T, quote = F, sep = "\t")
-write.table(neg_sig_eqtl_gns, "C:/Users/bre227/Documents/R/AD_project/Working/neg_eqtl_gns.txt", row.names = F, col.names = T, quote = F, sep = "\t")
+write.table(neg_sig_eqtl_snps, "~/Desktop/Uni Air/CSIRO/AD_project/Working/neg_eqtl_snps.txt", row.names = F, col.names = T, quote = F, sep = "\t")
+write.table(neg_sig_eqtl_gns, "~/Desktop/Uni Air/CSIRO/AD_project/Working/neg_eqtl_gns.txt", row.names = F, col.names = T, quote = F, sep = "\t")
 
 # create vectors of gene names for snps and differentially expressed genes
 neg_eqtl_snp_gns <- as.vector(na.omit(unique(neg_sig_eqtl_snps$hgnc_symbol)))
@@ -1984,7 +1587,7 @@ intersect(neg_eqtl_snp_gns, neg_eqtl_de_gns)
 ```
 35 SNPs in 34 unique genes affecting the expression of 74 unique genes. None of those genes are shared (i.e. all the SNPs are acting *cis*.
 
-#### Compare which genes are differentially expressed eQTL genes between the two groups
+### Compare which genes are differentially expressed eQTL genes between the two groups
 
 ```{r}
 setdiff(pos_eqtl_de_gns, neg_eqtl_de_gns)
@@ -1995,7 +1598,7 @@ length(setdiff(neg_eqtl_de_gns, pos_eqtl_de_gns))
 
 intersect(pos_eqtl_de_gns, neg_eqtl_de_gns)
 ```
-So all differentially expressed genes in each group are unique to that group other than *ADGRG7*. 
+So all differentially expressed genes in each group are unique to that group other than *`r intersect(pos_eqtl_de_gns, neg_eqtl_de_gns)`*.
 
 ***
 
@@ -2027,58 +1630,20 @@ So all differentially expressed genes in each group are unique to that group oth
 |AB-pos only      | `r length(unique(pos_sig_eqtl_snps$snps))` SNPs mapped to `r length(pos_eqtl_snp_gns)` genes | `r length(pos_eqtl_de_gns)`| 0|
 |AB-neg only      | `r length(unique(neg_sig_eqtls$snps))` SNPs mapped to `r length(neg_eqtl_snp_gns)` genes | `r length(neg_eqtl_de_gns)`| 0|
 
-All differentially expressed genes in the AB-pos and -neg groups were unique to that group other than *EPHA1*. 
-
-
-***
-
-*6 February 2018*
-
-Meeting with JD
-
-*AD nature paper - blood-based biomarker that is 90% accurate for PET status. Went viral all around the world.
-
-*Track down gene map for 249/530 genes found in clusters, and match to limma outputs
-
-*What did JD do with the SVD? In a scree plot, the first component explains 70-80% of the variance. 
-
-*Each of the values in ll isa list of 218 vectors, which is the first eigenvalue.
-
-*We have 249 root genes within each cluster.
-
-* The correlated gene is only signficiant because the correlation between local group 1 and local group 2 was signficantly different. Then we take an SVD of those genes that are significantly different. 
-
-*Then we do that for all 249 genes, and we compare our predictions using the eigenvalues to our initial limma results, and we can identify the genes for which using the eigenvalue has improved the prediction of AB. 
-
-* Now assess which eQTL differentially expressed genes in the AB-pos group are in the 530 diffrentially expressed limma genes, and which ones sit within the 249 genes in the clusters. And do they intercept with any of the PLINK significant SNPs? 
-
-*Get the gene names for the top 20 limma genes
-
-*FInd the genes that were acting in cis in the eQTL
-
-*Start thinking about biolgoical relationships
-
-*For presentation
-
--design, understanding, background, results. Talk to the picture or figure. 
-
-*New indices: Inflammatory burden, and cardiovascular disease index
-
-*Look up Rothman, epidemiologist - looks at RERI, attributable proportion, and Synergy Index. All measure whether the genetic and environmental effects are additive... or multiplicative? Paper: Anderson, 'Meausres of biologicla interaction'
+All differentially expressed genes in the AB-pos and -neg groups were unique to that group other than *`r intersect(pos_eqtl_de_gns, neg_eqtl_de_gns)`*. 
 
 ***
 
+# Enriched network decomposition (END) analysis
 
+## END using just the differentially expressed genes in networks
 
-# END analysis
+Load data
 
-Use JD's code to compare the Enriched Network Decomposition (END) p-values with the p-values of the limma results from the raw expression data.
-
-We'll first compare the limma results using the END carried out on *all* the genes in each network, even though most genes in each network weren't found to be differentially expressed in the initial analysis.
-
-Then we'll do the same for just the genes in the clusters that were found to be DE in the intial analysis, and see if it improves prediction.
-
-## END for all genes in networks
+```{r}
+require(limma)
+load("~/Dropbox/eQTL/Results/cluster_data/gene_clusters_expression.RData")
+```
 
 Get END eigenvalues from 'cluster_genexp'
 
@@ -2109,7 +1674,10 @@ colnames(lld2) <- names(cluster_genexp)
 Add metadata and gene/cluster annotation info
 ```{r}
 genemap <- read.csv("~/Dropbox/eQTL/Results/cluster_data/gene_clusters_hsa_map.csv") # note that 5 networks are missing from 'cluster_genexp' - why?
-keymeta <- read.table("C:/Users/bre227/Documents/R/AD_project/Working/key_metadata.txt", header = T)
+keymeta <- read.table("~/Desktop/Uni Air/CSIRO/AD_project/Working/key_metadata.txt", header = T)
+kp <- ifelse(is.na(keymeta$PET)==T,FALSE,TRUE) # create vector of TRUE/FALSE for recorded PET status, to determine which ones are missing
+keymeta1 <- keymeta[kp,] # restrict metadata for just those with recorded PET status
+keymeta1 <- keymeta1[-c(grep(c("771|914|918"), keymeta1$AIBL.Id)), ] # remove outliers idenfitied with PCA on expression data
 
 # number of unique networks
 length(unique(genemap$hsa))
@@ -2159,12 +1727,8 @@ topALL1<-toptable(fit=fit1.c, eb=fit.eb1, adjust="fdr", n=244, genelist=colnames
 topALL.1 <- topALL1[,c("ID","P.Value", "adj.P.Val")]
 ```
 
-Merge in gene annotation data
 
-```{r}
-names(genemap)[1]="ID"
-res.NetW <- merge(topALL.1,genemap,by.id="ID")
-```
+Many of the genes in the cluster_genexp data set weren't differentially expressed in the inital limma. Let's filter these and then run the END on that reduced set.
 
 Create vector of unique significant genes in 'cluster_genexp' and annotate with p-values from original limma
 
@@ -2212,12 +1776,6 @@ length(which(root_lim$end_cluster_p.value < root_lim$root_de_p.value))
 ```
 So for `r length(which(root_lim$end_cluster_p.value < root_lim$root_de_p.value))` networks, the p-value from the limma on the END was lower than the p-value for the differential expression of the network's root gene alone.
 
-*8 February 2018*
-
-## END using just the differentially expressed genes in networks
-
-Many of the genes in the cluster_genexp data set weren't differentially expressed in the inital limma. Let's filter these and then run the END on that reduced set.
-
 ```{r}
 lim1_out_sig <- dplyr::filter(lim1_out, P.Value < 0.05) # filter for p-values < 0.05
 sig_lim <- unlist(lim1_out_sig$probe_id) # create vector of significant probes
@@ -2237,7 +1795,7 @@ clst_tidy_1 <- lapply(clst_tidy, function(x) {
 
 # take all clusters with more than one gene that was found to be differentially expressed in the initial limma
 clst_tidy_2 <- lapply(clst_tidy, function(x) {
-  if (length(which(names(x) %in% sig_lim) == T) >= 1){
+  if (length(which(names(x) %in% sig_lim) == T) > 1){
     a <- which(names(x) %in% sig_lim)
     x[, c(1, a)]
   }
@@ -2291,8 +1849,6 @@ autoplot(pca2, data = test2, colour = "PET", label = T, label.label = "AIBL.Id")
 ```
 
 Seems to be a bit of a dead end.
-
-Create eigenvalues for the filtered clusters.
 
 ```{r}
 ll2 <- lapply(clst_tidy_3, function (x) {
@@ -2457,7 +2013,7 @@ pca6 <- prcomp(ll2d4.6[6:ncol(ll2d4.6)], center = T, scale. = T)
 
 autoplot(pca6, data = ll2d4.6, colour = "PET", label = T, label.label = "AIBL.Id") +
     viridis::scale_colour_viridis(option = "viridis", discrete = T) +
-    ggtitle("PCA with significant clusters")
+    ggtitle("PCA with all significant clusters (nominal p-value)")
 ```
 
 ## Enrich for genes significant eQTL genes
@@ -2503,26 +2059,12 @@ autoplot(pca7, data = ll2d4.7, colour = "PET", label = T, label.label = "AIBL.Id
 ## Get filtered gene list
 
 ```{r}
-library(rjson)
-filtered_clusters <- fromJSON(file = "~/Dropbox/eQTL/Results/cluster_data/gene_clusters_filtered.json")
-filtered_clusters1 <- lapply(filtered_clusters, function(x){ # extract just the genes
-  return(x$genes)
-})
-dingo_filtered_probes <- unique(unlist(lapply(filtered_clusters1, function(x){
-  a <- as.character(x)
-  return(a)
-})))
+load("~/Desktop/Uni Air/CSIRO/AD_project/Data/Networks/filtered_clusters.RData")
+load("~/Desktop/Uni Air/CSIRO/AD_project/Data/Networks/dingo_filtered_probes.RData")
 
 # how many unique probes are there in the filtered iDINGO output?
 length(dingo_filtered_probes)
-
-# save RData file of filtered_clusters and dingo_filtered_probes
-save(filtered_clusters, file = "C:/Users/bre227/Documents/R/AD_project/Data/Networks/filtered_clusters.RData")
-
-save(dingo_filtered_probes, file = "C:/Users/bre227/Documents/R/AD_project/Data/Networks/dingo_filtered_probes.RData")
-
 ```
-This is the same number of unique probes as in 'cluster_genexp', which means the latter had already been filtered. 
 
 *9 February 2018*
 
@@ -2575,7 +2117,7 @@ end_pca_plot <- function(cluster_list, title){
   colnames(lld2) <- names(cluster_list)
 
   # filter data and create contrasts
-  keymeta <- read.table("C:/Users/bre227/Documents/R/AD_project/Working/key_metadata.txt", header = T) # read key metadata
+  keymeta <- read.table("~/Desktop/Uni Air/CSIRO/AD_project/Working/key_metadata.txt", header = T) # read key metadata
   lld3 <- lld2[as.character(keymeta$AIBL.Id),] # put eigenvalue data in same order as keymeta
   kp <- ifelse(is.na(keymeta$PET)==T,FALSE,TRUE) # create vector of TRUE/FALSE for recorded PET status, to determine which ones are missing
   keymeta1 <- keymeta[kp,] # restrict metadata for just those with recorded PET status
@@ -2747,7 +2289,7 @@ end_filter <- function(list, lower, upper){
   
   # Find the indexes for the gene pairs that sit in the extreme tails
   dingo_clstrs_3 <- lapply(dingo_clstrs_2, function(x){
-    which(x < quantile(x, lower) | x > quantile(x, upper))
+    which(x < quantile(x, upper) | x > quantile(x, lower))
   })
   
   # get gene pairs corresponding to indexes
@@ -2791,14 +2333,14 @@ end_filter <- function(list, lower, upper){
 ```
 
 Run with 1% on either side
-```{r, message = F}
+```{r}
 one_percentile <- end_filter(dingo_clstrs, 0.01, 0.99)
 end_pca_plot(one_percentile, "PCA using END genes (1% threshold)")
 ```
 
 ### PCA with END at 0.5 percentile threshold
 
-```{r, message = F}
+```{r}
 half_percentile <- end_filter(dingo_clstrs, 0.005, 0.995)
 end_pca_plot(half_percentile, "PCA using END genes (0.5% threshold)")
 ```
@@ -2816,7 +2358,6 @@ end_pca_plot(quarter_percentile, "PCA using END genes (0.25% threshold)")
 point1_percentile <- end_filter(dingo_clstrs, 0.001, 0.999)
 end_pca_plot(point1_percentile, "PCA using END genes (0.1% threshold)")
 ```
-
 
 ***
 
@@ -2946,7 +2487,6 @@ p_table_5 <- dplyr::left_join(p_table_4,
                               by = c("rooted_network" = "ID"))
 ```
 
-
 For 0.1% threshold
 
 ```{r}
@@ -2973,8 +2513,6 @@ p_table_7 <- dplyr::left_join(p_table_7,
 ### Create function for volcano plots
 
 ```{r}
-
-# works
 
 vol_plot <- function(limma_output, xvar = "logFC_column", yvar = "p_value_column", alpha = 0.05, title = "Volcano plot", FDR = c(T, F), label_limit = alpha, label_type = c("gene", "network"), xlim_start = -0.15, xlim_end = 0.2){
   # load required packages
@@ -3042,7 +2580,9 @@ Save plot
 ```{r}
 require(cowplot)
 plots_END <- plot_grid(plot_END_1, plot_END_0.5, plot_END_0.25, plot_END_0.1, ncol = 4)
-ggsave("C:/Users/bre227/Documents/R/AD_project/Working/comp_volc_plot_END_thresholds.jpeg", plot = plots_END, device = "jpeg", width = 100, height = 30, units = "cm")
+ggsave("~/Desktop/Uni Air/CSIRO/AD_project/Working/comp_volc_plot_END_thresholds.jpeg", plot = plots_END, device = "jpeg", width = 100, height = 30, units = "cm")
+
+ggsave("~/Desktop/Uni Air/CSIRO/AD_project/Working/comp_volc_plot_END_thresholds.jpeg", plot = plots_END, device = "jpeg", width = 100, height = 30, units = "cm")
 ```
 
 
@@ -3082,10 +2622,10 @@ f
 ```{r}
 require(cowplot)
 test <- plot_grid(a, b, c, ncol = 3)
-ggsave("C:/Users/bre227/Documents/R/AD_project/Working/comp_volc_plot_root_genes.jpeg", plot = test, device = "jpeg", width = 100, height = 30, units = "cm")
+ggsave("~/Desktop/Uni Air/CSIRO/AD_project/Working/comp_volc_plot_root_genes.jpeg", plot = test, device = "jpeg", width = 100, height = 30, units = "cm")
 
 test <- plot_grid(d, e, f, ncol = 3)
-ggsave("C:/Users/bre227/Documents/R/AD_project/Working/comp_volc_plot_networks.jpeg", plot = test, device = "jpeg", width = 100, height = 30, units = "cm")
+ggsave("~/Desktop/Uni Air/CSIRO/AD_project/Working/comp_volc_plot_networks.jpeg", plot = test, device = "jpeg", width = 100, height = 30, units = "cm")
 ```
 
 ### Analysis of different genes involved
@@ -3118,234 +2658,4 @@ sig_PET_pos_v_neg <- read.table(text = getURL("https://raw.githubusercontent.com
                                 header = T)
 
 # load table of SNP genes
-
-```
-
-
-# ROSMAP data
-
-## Initial exploration
-
-### Read in data
-```{r}
-# read in expression data
-rosmap_data <- read.delim("~/Dropbox/eQTL/Data/ROSMAP_Data/ROSMAP_arrayExpression_normalized.tsv")
-
-# read in metadata
-rosmap_meta <- read.csv("~/Dropbox/eQTL/Data/ROSMAP_Data/ROSMAP_clinical.csv")
-rosmap_meta$projid <- as.character(rosmap_meta$projid) # to facilitate binding later
-```
-
-### Transpose and add metadata 
-```{r}
-# create vector of gene symbols
-gene_symbols <- as.character(rosmap_data$Symbol)
-
-# how many of the gene symbols are unique?
-length(unique(gene_symbols))
-
-# create vector of IDs
-rosmap_ids <- as.character(colnames(rosmap_data)[4:length(colnames(rosmap_data))])
-rosmap_ids <- gsub("ROS_|MAP_", "", rosmap_ids) # remove the 'ROS' and 'MAP' prefixes
-
-# remove first 3 columns ("ProbeID", "TargetID", and "Symbol") to leave just expression data
-rosmap_data1 <- as_tibble(rosmap_data[, -c(1:3)])
-rosmap_data1 <- as_tibble(t(rosmap_data1)) # transpose to put samples in rows, genes in columns
-head(rosmap_data1)
-
-# add colnames (gene symbols)
-colnames(rosmap_data1) <- gene_symbols
-head(rosmap_data1)
-
-# add column with sample IDs
-rosmap_data1$sample_id <- rosmap_ids
-
-# join with metadata and reorder
-rosmap_data2 <- dplyr::left_join(rosmap_data1,
-                                 dplyr::select(rosmap_meta, projid, study, age_at_visit_max, msex, ad_reagan),
-                                 by = c("sample_id" = "projid")) %>% 
-	na.omit
-rosmap_data2 <- dplyr::select(rosmap_data2, sample_id, study, age_at_visit_max, msex, ad_reagan, everything())
-
-# turn ad_reagan and msex into factors
-rosmap_data2$ad_reagan <- factor(rosmap_data2$ad_reagan)
-rosmap_data2$msex <- factor(rosmap_data2$msex)
-
-# to ensure the labels in the plots reflect the sample IDs
-# rosmap_data2 <- data.frame(rosmap_data2)
-# rownames(rosmap_data2) <- rosmap_ids
-```
-
-### Run PCA to see whether there is any clustering
-```{r}
-# run PCA
-pca_rosmap <- prcomp(rosmap_data2[6:ncol(rosmap_data2)], center = T, scale. = T)
-
-library(ggfortify)
-
-# colour by study ("Ros" or "MAP") 
-autoplot(pca_rosmap, data = rosmap_data2, colour = "study", label = T) +
-  viridis::scale_colour_viridis(option = "viridis", discrete = T)
-
-# colour by ad_reagan
-autoplot(pca_rosmap, data = rosmap_data2, colour = "ad_reagan", label = T) +
-  viridis::scale_colour_viridis(option = "viridis", discrete = T)
-
-# colour by sex 
-autoplot(pca_rosmap, data = rosmap_data2, colour = "msex", label = T) +
-  viridis::scale_colour_viridis(option = "viridis", discrete = T)
-```
-
-## Run limma
-
-### Create expression set
-
-We first create an 'ExpressionSet' with genes on rows, and samples on columns, following the guide here: <https://www.bioconductor.org/packages/3.7/bioc/vignettes/Biobase/inst/doc/ExpressionSetIntroduction.pdf>
-
-```{r, message = F, warning = F}
-library(Biobase)
-library(limma)
-```
-
-```{r}
-rosmap_exprs <- as.matrix(t(rosmap_data2[,6:ncol(rosmap_data2)])) # leaving behind the first 5 metadata columns
-rosmap_minimalSet <- ExpressionSet(assayData = rosmap_exprs)
-rosmap_pData <- rosmap_data2[,1:5]
-summary(rosmap_pData)
-```
-
-Create design matrix
-```{r}
-rosmap_Group <- rosmap_data2$ad_reagan
-rosmap_design <- model.matrix(~0 + rosmap_Group)
-colnames(rosmap_design) <- c("NEG", "POS")
-```
-
-### Run limma 
-
-Find differentially expressed genes
-```{r}
-rosmap_fit <- lmFit(rosmap_exprs, rosmap_design)
-rosmap_cont.matrix <- makeContrasts(POSvsNEG = POS - NEG, levels = rosmap_design)
-rosmap_fit <- contrasts.fit(rosmap_fit, rosmap_cont.matrix)
-rosmap_fit2 <- eBayes(rosmap_fit)
-topTable(rosmap_fit2, adjust = "BH")
-```
-
-### Create table of results and volcano plot
-```{r}
-rosmap_results_reagan_posvneg <- topTable(rosmap_fit2, n = Inf)
-rosmap_results_reagan_posvneg$gene_symbol <- rownames(rosmap_results_reagan_posvneg)
-
-# Create second function for volcano plots
-vol_plot_2 <- function(limma_output, xvar = "logFC", yvar = "adj.P.Val", alpha = 0.05, title = "Volcano plot", FDR = c(T, F)){
-  # load required packages
-  require(tidyverse)
-  require(ggrepel)
-  
-  # create data frame for manipulation
-  data <- limma_output
-  data$xcol <- data[, xvar]
-  data$ycol <- data[, yvar]
-  data$sig <- ifelse(data$ycol < alpha, "sig", "not sig") # create column for sign/non-sig
-  data$ytrans <- -log10(data$ycol) # log transform p-values
-  
-  if (FDR == T){
-    lab <- expression(-log[10]("FDR"))
-  } 
-  if (FDR == F){
-    lab <- expression(-log[10]("p-value"))
-  }
-  
-  # run ggplot
-  ggplot(data = data,
-          aes(x = xcol, y = ytrans),
-          environment = environment()) +
-  geom_point(aes(col = sig)) +
-  scale_colour_manual(values = c("sig" = "#F8766D", "not sig" = "#00BFC4")) +
-  geom_hline(yintercept = -log10(alpha)) +
-  xlab(expression(log[2]("fold change"))) +
-  ylab(lab) +
-  ggtitle(paste(title, " (alpha = ", alpha, ")", sep = ""))
-}
-
-# Plot
-vol_plot_2(rosmap_results_reagan_posvneg, xvar = "logFC", yvar = "adj.P.Val", alpha = 0.05, title = "Volcano plot", FDR = T)
-
-```
-
-Create table of significant results
-```{r}
-rosmap_signif_reagan_pos_v_neg <- dplyr::filter(rosmap_results_reagan_posvneg, adj.P.Val < 0.05)
-dim(rosmap_signif_reagan_pos_v_neg)
-
-# tidy gene symbols column
-rosmap_signif_reagan_pos_v_neg$probe_id <- gsub(".x", "", rosmap_signif_reagan_pos_v_neg$probe_id)
-```
-
-## Get entrez IDs from Biomart
-
-Create mart
-```{r, results = "hide"}
-# get vector of significant gene symbols
-rosmap_sig_genes <- rosmap_signif_reagan_pos_v_neg$gene_symbol
-
-library(biomaRt)
-mart_genes <- useMart('ENSEMBL_MART_ENSEMBL', 'hsapiens_gene_ensembl')
-rosmap_sig_genes_biomart_hits <- getBM(attributes = c("ensembl_gene_id", "chromosome_name", "start_position", "end_position", "strand", "hgnc_symbol", "entrezgene"),
-                       filters = "hgnc_symbol",
-                       values = rosmap_sig_genes,
-                       mart = mart_genes)
-```
-
-Bind results to limma table of significant genes
-```{r}
-rosmap_signif_reagan_pos_v_neg1 <- dplyr::left_join(rosmap_signif_reagan_pos_v_neg,
-																										dplyr::select(rosmap_sig_genes_biomart_hits, hgnc_symbol, entrezgene),
-																										by = c("gene_symbol" = "hgnc_symbol"))
-
-# How many genes are missing entrez ID hits?
-length(which(is.na(rosmap_signif_reagan_pos_v_neg1$entrezgene)))
-
-# How many unique entrez IDs are there in the hits?
-length(unique(rosmap_signif_reagan_pos_v_neg1$entrezgene))
-```
-
-Check whether the 'ProbeID's in the original rosmap data are entrez or ensembl IDS
-```{r}
-rosmap_data$ProbeID[grep("FZD9", rosmap_data$Symbol)]
-rosmap_data$ProbeID[grep("A2ML1", rosmap_data$Symbol)]
-rosmap_data$TargetID[grep("ACOX1", rosmap_data$Symbol)]
-```
-These (and a few others we tried) don't match to the entrez IDs from Biomart for those gene sybmols, so we'll have to stick with our original approach.  
-
-Create network ID column
-```{r}
-rosmap_signif_reagan_pos_v_neg1$kegg_id <- sapply(rosmap_signif_reagan_pos_v_neg1$entrezgene, function(x) {
-	ifelse(is.na(x), 
-				 NA,
-				 paste("hsa", x, sep = ":"))
-})				 
-```
-
-## Query the KEGG database with the network names
-
-```{r, message = F}
-# create vector of kegg IDs
-kegg_ids <- na.omit(unique(rosmap_signif_reagan_pos_v_neg1$kegg_id))
-
-library(KEGGREST)
-test <- keggGet(kegg_ids)
-```
-```{r}
-biocLite("Homo.sapiens")
-library(Homo.sapiens)
-```
-
-## Genotype data
-
-```{r}
-rosmap_gtypes <- read.table("~/Dropbox/eQTL/Data/ROSMAP_Data/ROSMAP_arrayGenotype.bed", header = F, nrow = 5, sep = "\t", na.strings = "NA")
-```
-
 
