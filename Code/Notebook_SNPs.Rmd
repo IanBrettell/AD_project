@@ -54,13 +54,13 @@ I was using the wrong ID data - we will run the above again substituting the cor
 ### Import files
 
 ```{r}
-exdata <- read.delim("C:/Users/bre227/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression.txt", sep = "", header = T)
+exdata <- read.delim("~/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression.txt", sep = "", header = T)
 dim(exdata)
 head(exdata)
 metadata <- read.delim("~/R/AD_project/Data/Expression/aibl-ids-6.0.0-201712010300.txt", sep = "\t", header = T)
 dim(metadata)
 head(metadata)
-ids2 <- read.delim("C:/Users/bre227/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression_IDs_UpdtdDec2017.txt", sep = " ")
+ids2 <- read.delim("~/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression_IDs_UpdtdDec2017.txt", sep = " ")
 colnames(exdata) <- as.vector(ids2$x) # replace colnames with ids2
 
 # filter for those in ids2
@@ -126,6 +126,11 @@ write.table(meta2, "C:/Users/bre227/Documents/R/AD_project/Working/key_metadata.
 ### Create initial exploratory plots
 
 ***
+Import metadata
+```{r}
+require(RCurl)
+meta2 <- read.delim(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/key_metadata.txt"), header = T)
+```
 
 Plot for whole dataset
 ```{r}
@@ -191,7 +196,6 @@ library(limma)
 ```
 ```{r}
 PET_apoe4 <- paste(pData$PET, pData$apoe4, sep = ".") # put PET/apoe4 combinations into a vector
-PET_apoe4
 
 PET_apoe4 <- factor(PET_apoe4, levels = c(unique(PET_apoe4))) # turn it into a factor
 design <- model.matrix(~0 + PET_apoe4) # create factor table for four combinations
@@ -275,10 +279,6 @@ library(ggfortify)
 autoplot(pca2, data = exdata3, colour = "apoe4", label = T, label.label = "AIBL.Id")
 ```
 
-```{r, results = "hide"}
-library(Biobase)
-```
-
 ```{r}
 exprs <- as.matrix(t(exdata3[,6:22016])) # leaving behind the first 5 metadata columns
 minimalSet <- ExpressionSet(assayData = exprs)
@@ -286,13 +286,8 @@ pData <- exdata3[,1:5]
 summary(pData)
 ```
 
-```{r, results = "hide"}
-library(limma)
-```
-
 ```{r}
 PET_apoe4 <- paste(pData$PET, pData$apoe4, sep = ".") # put PET/apoe4 combinations into a vector
-PET_apoe4
 
 PET_apoe4 <- factor(PET_apoe4, levels = c(unique(PET_apoe4))) # turn it into a factor
 design <- model.matrix(~0 + PET_apoe4) # create factor table for four combinations
@@ -433,6 +428,10 @@ pid_all <- left_join(pid_symb, pid_ent, by = "probe_id") %>%
          xx3.1 = "ensembl_id") %>% 
   dplyr::select(probe_id, everything())
 
+# tidy environment
+rm(list = ls(pattern = "xx"))
+
+# write table
 write.table(pid_all, "C:/Users/bre227/Documents/R/AD_project/Working/affy_probes_annotated.txt", row.names = F, col.names = T, quote = F, sep = "\t")
 
 # find how many probes are annotated
@@ -457,7 +456,7 @@ signif_all <- dplyr::select(signif_apoe4_for_PET_yes, probe_id, P.Value) %>%
 
 nrow(signif_all)
 ```
-Therefore 2438 genes are expressed differentially across at least two contrasts
+Therefore `r nrow(signif_all)` genes are expressed differentially across at least two contrasts
 
 
 Bind gene ids to 'signif_all'
@@ -752,9 +751,9 @@ install.packages("MatrixEQTL")
 ## Import files
 
 ```{r}
-aibl_snps <- read.delim("C:/Users/bre227/Dropbox/eQTL/Data/Expanded SNP set/AIBLgene_SNP_LIST_04032015.tsv")
-snap_edit <- read.delim("C:/Users/bre227/Dropbox/eQTL/Data/Expanded SNP set/snapResults_edit.txt")
-snap <- read.delim("C:/Users/bre227/Dropbox/eQTL/Data/Expanded SNP set/snapResults.txt")
+aibl_snps <- read.delim("~/Dropbox/eQTL/Data/Expanded SNP set/AIBLgene_SNP_LIST_04032015.tsv")
+snap_edit <- read.delim("~/Dropbox/eQTL/Data/Expanded SNP set/snapResults_edit.txt")
+snap <- read.delim("~/Dropbox/eQTL/Data/Expanded SNP set/snapResults.txt")
 ```
 
 ***
@@ -1026,14 +1025,14 @@ This suggests that the best approach would be to integrate the two methods (biom
 
 ```{r}
 library(readxl)
-gtypes <- read_excel("C:/Users/bre227/Dropbox/eQTL/Data/Expanded SNP set/AIBLgene_SNP_Data_by_Gene_Expression_IDs.xlsx",
+gtypes <- read_excel("~/Dropbox/eQTL/Data/Expanded SNP set/AIBLgene_SNP_Data_by_Gene_Expression_IDs.xlsx",
                 col_names = F)
 ```
 
 Note that the AIBL IDs are incorrect in the excel file. We attach the correct IDs using the 'AIBL_Gene_Expression_IDs_UpdtdDec2017.txt' file, **assuming that both sets of IDs, when sorted, correspond with each other**.
 
 ```{r}
-ids2 <- read.delim("C:/Users/bre227/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression_IDs_UpdtdDec2017.txt", sep = " ")
+ids2 <- read.delim("~/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression_IDs_UpdtdDec2017.txt", sep = " ")
 
 # bind colnames for exdata to new IDs
 ids2$old_ids <- as.integer(gsub("X", "", colnames(exdata)))
@@ -1097,7 +1096,7 @@ In accordance with the guide here: <http://zzz.bwh.harvard.edu/plink/data.shtml>
 Tried to run PLINK, but it came up with an error in the ped file. Find out what's wrong:
 
 ```{r}
-ped <- read.table("C:/Users/bre227/Documents/R/AD_project/Working/genotype_data.txt", header = T)
+ped <- read.table(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/genotype_data.txt"), header = T)
 
 # find unique values across genotype data
 as.character(unique(unlist(ped[, 5:ncol(ped)])))
@@ -1165,7 +1164,7 @@ write.table(map, "C:/Users/bre227/Documents/R/AD_project/Working/plink/snp_data.
 Reformat ped into PED format
 ```{r}
 ped2 <- ped[, -c(1:4)] # remove extraneous columns
-meta <- read.table("C:/Users/bre227/Documents/R/AD_project/Working/key_metadata.txt", header = T) # read in metadata
+meta <- read.table(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/key_metadata.txt"), header = T) # read in metadata
 colnames(ped2) <- gsub("X", "", colnames(ped2)) # remove "X" from colnames
 ped2 <- data.frame(t(ped2), stringsAsFactors = F) # transpose ped2
 ped2$AIBL.Id <- rownames(ped2) # make a new column with the row names (AIBL Ids) to use to bind with metadata
@@ -1203,8 +1202,8 @@ I fed the files to PLINK using the following code: `./plink --file snp_data --ma
 Take a look at the files.
 
 ```{r}
-pk_ass <- read.table("C:/Users/bre227/Documents/R/AD_project/Working/plink/plink.assoc", na.strings = NA, header = T, fill = T)
-pk_fsh <- read.table("C:/Users/bre227/Documents/R/AD_project/Working/plink/plink.assoc.fisher", na.strings = NA, header = T, fill = T)
+pk_ass <- read.table(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/plink/plink.assoc"), na.strings = NA, header = T, fill = T)
+pk_fsh <- read.table(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/plink/plink.assoc.fisher"), na.strings = NA, header = T, fill = T)
 
 length(which(pk_ass$P < 0.05))
 length(which(pk_fsh$P < 0.05))
@@ -1217,7 +1216,7 @@ Shows that the Fisher exact test output had fewer significant SNPs, so we'll pre
 sig_pk <- pk_fsh[(pk_fsh$P < 0.05) == T &!is.na(pk_fsh$P), ]
 dim(sig_pk)
 # merge with gene ids from 'aible_snp_genes.txt' file
-snp_gns <- read.delim("C:/Users/bre227/Documents/R/AD_project/Working/aibl_snp_genes.txt", sep = "\t", header = T)
+snp_gns <- read.delim(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/aibl_snp_genes.txt"), sep = "\t", header = T)
 library(dplyr)
 sig_pk <- left_join(sig_pk, snp_gns, by = c("SNP" = "refsnp_id"))
 # note that some SNPs map to multiple genes
@@ -1243,8 +1242,10 @@ sig_pk <- dplyr::select(sig_pk,
                  snp_locus = "chrom_start", 
                  gene_start = "start_position", 
                  gene_end = "end_position", 
-                 strand, ensembl_id = "ensembl_gene_stable_id", 
-                 hgnc_symbol, entrez_id = "entrezgene")
+                 strand, 
+								 ensembl_id = "ensembl_gene_stable_id", 
+                 hgnc_symbol, 
+								 entrez_id = "entrezgene")
 
 # write table
 write.table(sig_pk, "C:/Users/bre227/Documents/R/AD_project/Working/sig_PET_pos_v_neg_alleles_annotated.txt", col.names = T, row.names = F, quote = F, sep = "\t")
@@ -1252,11 +1253,11 @@ write.table(sig_pk, "C:/Users/bre227/Documents/R/AD_project/Working/sig_PET_pos_
 
 Combine data with probe id (by entrez id, which is the most annotated of gene ids)
 ```{r}
-probes <- read.delim("C:/Users/bre227/Documents/R/AD_project/Working/affy_probes_annotated.txt", header = T, sep = "\t")
+probes <- read.delim(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/affy_probes_annotated.txt"), header = T, sep = "\t")
 sig_pk <- left_join(sig_pk, probes, by = "entrez_id")
 # remove second ensembl id and gene symbol columns (they have no additional information)
 sig_pk <- dplyr::select(sig_pk, -ensembl_id.y, -gene_symbol) %>% 
-  rename(ensembl_id = ensembl_id.x)
+	rename(ensembl_id = "ensembl_id.x")
 
 # add NAs to hgnc_symbol column
 sig_pk$hgnc_symbol[sig_pk$hgnc_symbol == ""] <- NA
@@ -1426,8 +1427,8 @@ Got the same results with an association test with 10,000 permutations - only tw
 Read in data.
 
 ```{r}
-exdata <- read.delim("C:/Users/bre227/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression.txt", sep = "", header = T)
-ids2 <- read.delim("C:/Users/bre227/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression_IDs_UpdtdDec2017.txt", sep = " ")
+exdata <- read.delim("~/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression.txt", sep = "", header = T)
+ids2 <- read.delim("~/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression_IDs_UpdtdDec2017.txt", sep = " ")
 colnames(exdata) <- as.vector(ids2$x) # replace colnames with ids2
 meta <- read.delim("C:/Users/bre227/Documents/R/AD_project/Working/key_metadata.txt", header = T, sep = "\t")
 ```
@@ -1596,8 +1597,8 @@ colnames(ped7) <- gsub("X", "", colnames(ped7))
 #### Expression file
 
 ```{r}
-exdata <- read.delim("C:/Users/bre227/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression.txt", sep = "", header = T)
-ids2 <- read.delim("C:/Users/bre227/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression_IDs_UpdtdDec2017.txt", sep = " ")
+exdata <- read.delim("~/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression.txt", sep = "", header = T)
+ids2 <- read.delim("~/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression_IDs_UpdtdDec2017.txt", sep = " ")
 colnames(exdata) <- as.vector(ids2$x) # replace colnames with ids2
 
 # extract only those columns (samples) for which we have genotype data
@@ -1759,6 +1760,13 @@ sig_eqtl_gns_full <- na.omit(sig_eqtl_gns_full)
 sig_eqtl_gns_full
 ```
 
+#### Find intersection between eQTL genes and original limma results
+```{r}
+intersect_lim_eqtl <- na.omit(intersect(sig_PET_pos_v_neg$gene_symbol, sig_eqtl_gns$gene_symbol))
+intersect_lim_eqtl
+```
+
+
 ### Carry out the same eQTL analysis but independently with the PET pos and neg groups
 
 Find out which AIBL IDs match with PET pos and neg status and create covariates file for them
@@ -1799,8 +1807,8 @@ Divide out expression data
 
 ```{r}
 ## Get expression data
-exdata <- read.delim("C:/Users/bre227/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression.txt", sep = "", header = T)
-ids2 <- read.delim("C:/Users/bre227/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression_IDs_UpdtdDec2017.txt", sep = " ")
+exdata <- read.delim("~/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression.txt", sep = "", header = T)
+ids2 <- read.delim("~/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression_IDs_UpdtdDec2017.txt", sep = " ")
 colnames(exdata) <- as.vector(ids2$x) # replace colnames with ids2
 exdata <- exdata[, colnames(exdata) %in% colnames(ped7)] # extract only those columns (samples) for which we have genotype data
 
@@ -2135,7 +2143,7 @@ Get END eigenvalues from 'cluster_genexp'
 
 ```{r}
 require(limma)
-load("C:/Users/bre227/Dropbox/eQTL/Results/cluster_data/gene_clusters_expression.RData")
+load("~/Dropbox/eQTL/Results/cluster_data/gene_clusters_expression.RData")
 ll <- lapply(cluster_genexp, function (x) {
   xm <- as.matrix(log(x[,-1])) # creates a matrix, using log to standardise
   svd.decomp2 <- svd(xm) # applies singular value decomposition
@@ -2159,7 +2167,7 @@ colnames(lld2) <- names(cluster_genexp)
 
 Add metadata and gene/cluster annotation info
 ```{r}
-genemap <- read.csv("C:/Users/bre227/Dropbox/eQTL/Results/cluster_data/gene_clusters_hsa_map.csv") # note that 5 networks are missing from 'cluster_genexp' - why?
+genemap <- read.csv("~/Dropbox/eQTL/Results/cluster_data/gene_clusters_hsa_map.csv") # note that 5 networks are missing from 'cluster_genexp' - why?
 keymeta <- read.table("C:/Users/bre227/Documents/R/AD_project/Working/key_metadata.txt", header = T)
 
 # number of unique networks
@@ -2555,7 +2563,7 @@ autoplot(pca7, data = ll2d4.7, colour = "PET", label = T, label.label = "AIBL.Id
 
 ```{r}
 library(rjson)
-filtered_clusters <- fromJSON(file = "C:/Users/bre227/Dropbox/eQTL/Results/cluster_data/gene_clusters_filtered.json")
+filtered_clusters <- fromJSON(file = "~/Dropbox/eQTL/Results/cluster_data/gene_clusters_filtered.json")
 filtered_clusters1 <- lapply(filtered_clusters, function(x){ # extract just the genes
   return(x$genes)
 })
@@ -2714,7 +2722,7 @@ Meeting with JD:
 Load files
 ```{r}
 # load files from dropbox
-load("C:/Users/bre227/Dropbox/eQTL/Results/cluster_data/iDINGO_results/RData/All_clusters.RData")
+load("~/Dropbox/eQTL/Results/cluster_data/iDINGO_results/RData/All_clusters.RData")
 # create list
 dingo_clstrs <- mget(ls(pattern = "hsa"))
 # remove indidivual cluster lists
@@ -2903,6 +2911,8 @@ eQTL
 
 # Comparison between approaches
 
+
+
 ## Get table of results from initial limma
 
 ```{r}
@@ -2920,14 +2930,14 @@ init_lim_table$probe_id <- as.character(init_lim_table$probe_id)
 ### WORKING
 
 ```{r}
-gene_clusters_raw <- fromJSON(file = "C:/Users/bre227/Dropbox/eQTL/Results/cluster_data/gene_clusters_raw.json")
+gene_clusters_raw <- fromJSON(file = "~/Dropbox/eQTL/Results/cluster_data/gene_clusters_raw.json")
 ```
 
 
 ### What we did
 ```{r}
 # read table with gene-cluster information
-gns_in_clstrs <- read.table("C:/Users/bre227/Dropbox/eQTL/Results/cluster_data/gene_clusters_PC1.csv", sep = ",", header = T)
+gns_in_clstrs <- read.table("~/Dropbox/eQTL/Results/cluster_data/gene_clusters_PC1.csv", sep = ",", header = T)
 gns_in_clstrs <- dplyr::rename(gns_in_clstrs, probe_id = "X")
 
 # get names of all the clusters that each gene falls within
@@ -3156,15 +3166,19 @@ vol_plot(hsa05165_limma, xvar = "logFC", yvar = "P.Value", title = "Original lim
 
 ```
 
+## Intersection of genes found by different approaches
+
 # ROSMAP data
+
+## Initial exploration
 
 ### Read in data
 ```{r}
 # read in expression data
-rosmap_data <- read.delim("C:/Users/bre227/Dropbox/eQTL/Data/ROSMAP_Data/ROSMAP_arrayExpression_normalized.tsv")
+rosmap_data <- read.delim("~/Dropbox/eQTL/Data/ROSMAP_Data/ROSMAP_arrayExpression_normalized.tsv")
 
 # read in metadata
-rosmap_meta <- read.csv("C:/Users/bre227/Dropbox/eQTL/Data/ROSMAP_Data/ROSMAP_clinical.csv")
+rosmap_meta <- read.csv("~/Dropbox/eQTL/Data/ROSMAP_Data/ROSMAP_clinical.csv")
 rosmap_meta$projid <- as.character(rosmap_meta$projid) # to facilitate binding later
 ```
 
@@ -3172,6 +3186,9 @@ rosmap_meta$projid <- as.character(rosmap_meta$projid) # to facilitate binding l
 ```{r}
 # create vector of gene symbols
 gene_symbols <- as.character(rosmap_data$Symbol)
+
+# how many of the gene symbols are unique?
+length(unique(gene_symbols))
 
 # create vector of IDs
 rosmap_ids <- as.character(colnames(rosmap_data)[4:length(colnames(rosmap_data))])
@@ -3184,15 +3201,25 @@ head(rosmap_data1)
 
 # add colnames (gene symbols)
 colnames(rosmap_data1) <- gene_symbols
+head(rosmap_data1)
 
 # add column with sample IDs
 rosmap_data1$sample_id <- rosmap_ids
 
 # join with metadata and reorder
 rosmap_data2 <- dplyr::left_join(rosmap_data1,
-                                 dplyr::select(rosmap_meta, projid, study, age_at_visit_max, msex, braaksc),
-                                 by = c("sample_id" = "projid"))
-rosmap_data2 <- dplyr::select(rosmap_data2, sample_id, study, age_at_visit_max, msex, braaksc, everything())
+                                 dplyr::select(rosmap_meta, projid, study, age_at_visit_max, msex, ad_reagan),
+                                 by = c("sample_id" = "projid")) %>% 
+	na.omit
+rosmap_data2 <- dplyr::select(rosmap_data2, sample_id, study, age_at_visit_max, msex, ad_reagan, everything())
+
+# turn ad_reagan and msex into factors
+rosmap_data2$ad_reagan <- factor(rosmap_data2$ad_reagan)
+rosmap_data2$msex <- factor(rosmap_data2$msex)
+
+# to ensure the labels in the plots reflect the sample IDs
+# rosmap_data2 <- data.frame(rosmap_data2)
+# rownames(rosmap_data2) <- rosmap_ids
 ```
 
 ### Run PCA to see whether there is any clustering
@@ -3206,13 +3233,165 @@ library(ggfortify)
 autoplot(pca_rosmap, data = rosmap_data2, colour = "study", label = T) +
   viridis::scale_colour_viridis(option = "viridis", discrete = T)
 
-# colour by sex 
-autoplot(pca_rosmap, data = dplyr::filter(rosmap_data2, !is.na(msex)), colour = "msex", label = T) +
+# colour by ad_reagan
+autoplot(pca_rosmap, data = rosmap_data2, colour = "ad_reagan", label = T) +
   viridis::scale_colour_viridis(option = "viridis", discrete = T)
 
-# colour by braaksc
-autoplot(pca_rosmap, data = rosmap_data2, colour = "braaksc", label = T) +
+# colour by sex 
+autoplot(pca_rosmap, data = rosmap_data2, colour = "msex", label = T) +
   viridis::scale_colour_viridis(option = "viridis", discrete = T)
+```
+
+## Run limma
+
+### Create expression set
+
+We first create an 'ExpressionSet' with genes on rows, and samples on columns, following the guide here: <https://www.bioconductor.org/packages/3.7/bioc/vignettes/Biobase/inst/doc/ExpressionSetIntroduction.pdf>
+
+```{r, message = F, warning = F}
+library(Biobase)
+library(limma)
+```
+
+```{r}
+rosmap_exprs <- as.matrix(t(rosmap_data2[,6:ncol(rosmap_data2)])) # leaving behind the first 5 metadata columns
+rosmap_minimalSet <- ExpressionSet(assayData = rosmap_exprs)
+rosmap_pData <- rosmap_data2[,1:5]
+summary(rosmap_pData)
+```
+
+Create design matrix
+```{r}
+rosmap_Group <- rosmap_data2$ad_reagan
+rosmap_design <- model.matrix(~0 + rosmap_Group)
+colnames(rosmap_design) <- c("NEG", "POS")
+```
+
+### Run limma 
+
+Find differentially expressed genes
+```{r}
+rosmap_fit <- lmFit(rosmap_exprs, rosmap_design)
+rosmap_cont.matrix <- makeContrasts(POSvsNEG = POS - NEG, levels = rosmap_design)
+rosmap_fit <- contrasts.fit(rosmap_fit, rosmap_cont.matrix)
+rosmap_fit2 <- eBayes(rosmap_fit)
+topTable(rosmap_fit2, adjust = "BH")
+```
+
+### Create table of results and volcano plot
+```{r}
+rosmap_results_reagan_posvneg <- topTable(rosmap_fit2, n = Inf)
+rosmap_results_reagan_posvneg$gene_symbol <- rownames(rosmap_results_reagan_posvneg)
+
+# Create second function for volcano plots
+vol_plot_2 <- function(limma_output, xvar = "logFC", yvar = "adj.P.Val", alpha = 0.05, title = "Volcano plot", FDR = c(T, F)){
+  # load required packages
+  require(tidyverse)
+  require(ggrepel)
+  
+  # create data frame for manipulation
+  data <- limma_output
+  data$xcol <- data[, xvar]
+  data$ycol <- data[, yvar]
+  data$sig <- ifelse(data$ycol < alpha, "sig", "not sig") # create column for sign/non-sig
+  data$ytrans <- -log10(data$ycol) # log transform p-values
+  
+  if (FDR == T){
+    lab <- expression(-log[10]("FDR"))
+  } 
+  if (FDR == F){
+    lab <- expression(-log[10]("p-value"))
+  }
+  
+  # run ggplot
+  ggplot(data = data,
+          aes(x = xcol, y = ytrans),
+          environment = environment()) +
+  geom_point(aes(col = sig)) +
+  scale_colour_manual(values = c("sig" = "#F8766D", "not sig" = "#00BFC4")) +
+  geom_hline(yintercept = -log10(alpha)) +
+  xlab(expression(log[2]("fold change"))) +
+  ylab(lab) +
+  ggtitle(paste(title, " (alpha = ", alpha, ")", sep = ""))
+}
+
+# Plot
+vol_plot_2(rosmap_results_reagan_posvneg, xvar = "logFC", yvar = "adj.P.Val", alpha = 0.05, title = "Volcano plot", FDR = T)
 
 ```
+
+Create table of significant results
+```{r}
+rosmap_signif_reagan_pos_v_neg <- dplyr::filter(rosmap_results_reagan_posvneg, adj.P.Val < 0.05)
+dim(rosmap_signif_reagan_pos_v_neg)
+
+# tidy gene symbols column
+rosmap_signif_reagan_pos_v_neg$probe_id <- gsub(".x", "", rosmap_signif_reagan_pos_v_neg$probe_id)
+```
+
+## Get entrez IDs from Biomart
+
+Create mart
+```{r, results = "hide"}
+# get vector of significant gene symbols
+rosmap_sig_genes <- rosmap_signif_reagan_pos_v_neg$gene_symbol
+
+library(biomaRt)
+mart_genes <- useMart('ENSEMBL_MART_ENSEMBL', 'hsapiens_gene_ensembl')
+rosmap_sig_genes_biomart_hits <- getBM(attributes = c("ensembl_gene_id", "chromosome_name", "start_position", "end_position", "strand", "hgnc_symbol", "entrezgene"),
+                       filters = "hgnc_symbol",
+                       values = rosmap_sig_genes,
+                       mart = mart_genes)
+```
+
+Bind results to limma table of significant genes
+```{r}
+rosmap_signif_reagan_pos_v_neg1 <- dplyr::left_join(rosmap_signif_reagan_pos_v_neg,
+																										dplyr::select(rosmap_sig_genes_biomart_hits, hgnc_symbol, entrezgene),
+																										by = c("gene_symbol" = "hgnc_symbol"))
+
+# How many genes are missing entrez ID hits?
+length(which(is.na(rosmap_signif_reagan_pos_v_neg1$entrezgene)))
+
+# How many unique entrez IDs are there in the hits?
+length(unique(rosmap_signif_reagan_pos_v_neg1$entrezgene))
+```
+
+Check whether the 'ProbeID's in the original rosmap data are entrez or ensembl IDS
+```{r}
+rosmap_data$ProbeID[grep("FZD9", rosmap_data$Symbol)]
+rosmap_data$ProbeID[grep("A2ML1", rosmap_data$Symbol)]
+rosmap_data$TargetID[grep("ACOX1", rosmap_data$Symbol)]
+```
+These (and a few others we tried) don't match to the entrez IDs from Biomart for those gene sybmols, so we'll have to stick with our original approach.  
+
+Create network ID column
+```{r}
+rosmap_signif_reagan_pos_v_neg1$kegg_id <- sapply(rosmap_signif_reagan_pos_v_neg1$entrezgene, function(x) {
+	ifelse(is.na(x), 
+				 NA,
+				 paste("hsa", x, sep = ":"))
+})				 
+```
+
+## Query the KEGG database with the network names
+
+```{r, message = F}
+# create vector of kegg IDs
+kegg_ids <- na.omit(unique(rosmap_signif_reagan_pos_v_neg1$kegg_id))
+
+library(KEGGREST)
+test <- keggGet(kegg_ids)
+```
+```{r}
+biocLite("Homo.sapiens")
+library(Homo.sapiens)
+```
+
+## Genotype data
+
+```{r}
+rosmap_gtypes <- read.table("~/Dropbox/eQTL/Data/ROSMAP_Data/ROSMAP_arrayGenotype.bed", header = F, nrow = 5, sep = "\t", na.strings = "NA")
+```
+
 
