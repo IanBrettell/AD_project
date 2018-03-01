@@ -2059,8 +2059,8 @@ autoplot(pca7, data = ll2d4.7, colour = "PET", label = T, label.label = "AIBL.Id
 ## Get filtered gene list
 
 ```{r}
-load("~/Desktop/Uni Air/CSIRO/AD_project/Data/Networks/filtered_clusters.RData")
-load("~/Desktop/Uni Air/CSIRO/AD_project/Data/Networks/dingo_filtered_probes.RData")
+load(url("https://github.com/IanBrettell/AD_project/raw/master/Working/networks/dingo_filtered_probes.RData"))
+load(url("https://github.com/IanBrettell/AD_project/raw/master/Working/networks/filtered_clusters.RData"))
 
 # how many unique probes are there in the filtered iDINGO output?
 length(dingo_filtered_probes)
@@ -2095,6 +2095,50 @@ For Monday:
 ## PCA for clusters with most DE genes in them
 
 ### Create function to create eigenvalues and run limma
+```{r}
+end_eigen <- function(cluster_list){
+  # create eigenvalues
+  ll <- lapply(cluster_list, function (x) {
+    xm <- as.matrix(log(x[,-1])) # creates a matrix, using log to standardise
+    svd.decomp2 <- svd(xm) # applies singular value decomposition
+    svd.v <- svd.decomp2$v # pulls out the matrix whose columns contain the right singular vectors of xm
+    X.pca <- xm %*% svd.v # multiplies the original 'xm' matrix by the right singular vectors matrix
+    xout <-  X.pca[,1] # takes the first eigemvalue for each individual
+    return(xout)
+  })
+  
+  # turn it into a data frame
+  lld <- do.call(rbind.data.frame,ll) # creates a data frame of eigenvalues
+  lld2 <- t(lld) # transpose so that individuals are rows
+  rownames(lld2) <- cluster_list[[1]][,1]
+  colnames(lld2) <- names(cluster_list)
+
+  # filter data and create contrasts
+  require(RCurl)
+  keymeta <- read.delim(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/key_metadata.txt"), header = T) # read key metadata
+  lld3 <- lld2[as.character(keymeta$AIBL.Id),] # put eigenvalue data in same order as keymeta
+  kp <- ifelse(is.na(keymeta$PET)==T,FALSE,TRUE) # create vector of TRUE/FALSE for recorded PET status, to determine which ones are missing
+  keymeta1 <- keymeta[kp,] # restrict metadata for just those with recorded PET status
+  keymeta1 <- keymeta1[-c(grep(c("771|914|918"), keymeta1$AIBL.Id)), ] # remove outliers idenfitied with PCA on expression data
+  Y1 <- factor(as.character(keymeta1$PET)) # create factor vector, where NEG = 1, POS = 2
+  lld4 <- lld3[kp,] # remove individuals that do not have PET status recorded
+  lld4 <- lld4[-c(grep(c("771|914|918"), rownames(lld4))), ] # remove outliers identified with PCA on expression data
+  treat1<-factor(c(Y1), labels=c("Normal","Alzheimers")) # create vector of factors
+  design_treat1<-model.matrix(~0+treat1) # create model matrix
+  colnames(design_treat1) <- c("Normal","Alzheimers")
+  contrast.matrix_treat1<-makeContrasts(Normal-Alzheimers, levels=design_treat1) # create contrast
+
+  # run limma
+  x1 <- t(lld4) # Transpose data into matrix for limma fit
+  fit.lm1<-lmFit(x1,design_treat1) # fit a linear model using the matrix x1 from above
+  fit1.c <-contrasts.fit(fit.lm1,contrast.matrix_treat1) # use contrasts made above
+  fit.eb1<- eBayes(fit1.c) # compute Bayes statistics
+  topALL1<-toptable(fit=fit1.c, eb=fit.eb1, adjust="fdr", n=length(cluster_list), genelist=colnames(lld4))## comparison treated - untreated
+}
+```
+
+
+### Create function to create eigenvalues, run limma and plot
 ```{r}
 # create function for PCA analysis
 
@@ -2410,14 +2454,6 @@ init_lim_table$probe_id <- as.character(init_lim_table$probe_id)
 
 ## Get table of results from limma from END for networks containing just DE genes
 
-
-### WORKING
-
-```{r}
-gene_clusters_raw <- fromJSON(file = "~/Dropbox/eQTL/Results/cluster_data/gene_clusters_raw.json")
-```
-
-
 ### What we did
 ```{r}
 # read table with gene-cluster information
@@ -2580,9 +2616,9 @@ Save plot
 ```{r}
 require(cowplot)
 plots_END <- plot_grid(plot_END_1, plot_END_0.5, plot_END_0.25, plot_END_0.1, ncol = 4)
-ggsave("~/Desktop/Uni Air/CSIRO/AD_project/Working/comp_volc_plot_END_thresholds.jpeg", plot = plots_END, device = "jpeg", width = 100, height = 30, units = "cm")
+# ggsave("~/Desktop/Uni Air/CSIRO/AD_project/Working/comp_volc_plot_END_thresholds.jpeg", plot = plots_END, device = "jpeg", width = 100, height = 30, units = "cm")
 
-ggsave("~/Desktop/Uni Air/CSIRO/AD_project/Working/comp_volc_plot_END_thresholds.jpeg", plot = plots_END, device = "jpeg", width = 100, height = 30, units = "cm")
+plots_END
 ```
 
 
@@ -2609,53 +2645,17 @@ c <- vol_plot(p_table_7, xvar = "logFC_END_DE_only", yvar = "FDR_END_DE_only", t
 d <- vol_plot(p_table_7, xvar = "logFC_init_limma", yvar = "FDR_init_limma", title = "Initial limma: PET-pos v -neg", FDR = T)
 e <- vol_plot(p_table_7, xvar = "logFC_END_0.5", yvar = "FDR_END_0.5", title = "END with genes in 0.5 percentile", FDR = T, label_type = "network")
 f <- vol_plot(p_table_7, xvar = "logFC_END_DE_only", yvar = "FDR_END_DE_only", title = "END with DE genes only", FDR = T, label_limit = 0.005, label_type = "network")
-
-a
-b
-c
-d
-e
-f
 ```
 
 
 ```{r}
 require(cowplot)
-test <- plot_grid(a, b, c, ncol = 3)
-ggsave("~/Desktop/Uni Air/CSIRO/AD_project/Working/comp_volc_plot_root_genes.jpeg", plot = test, device = "jpeg", width = 100, height = 30, units = "cm")
+comp_plot1 <- plot_grid(a, b, c, ncol = 3)
+comp_plot1
+# ggsave("~/Desktop/Uni Air/CSIRO/AD_project/Working/comp_volc_plot_root_genes.jpeg", plot = comp_plot1, device = "jpeg", width = 100, height = 30, units = "cm")
 
-test <- plot_grid(d, e, f, ncol = 3)
-ggsave("~/Desktop/Uni Air/CSIRO/AD_project/Working/comp_volc_plot_networks.jpeg", plot = test, device = "jpeg", width = 100, height = 30, units = "cm")
+comp_plot2 <- plot_grid(d, e, f, ncol = 3)
+comp_plot2
+# ggsave("~/Desktop/Uni Air/CSIRO/AD_project/Working/comp_volc_plot_networks.jpeg", plot = comp_plot2, device = "jpeg", width = 100, height = 30, units = "cm")
 ```
-
-### Analysis of different genes involved
-
-The Human Papillomavirus Infection pathway is the most significant (network ID “hsa05165”). That network contains 152 genes, as set out in MV’s ‘gene_clusters_expression.RData’ document, but when filtered for those that were DE in the original limma, had 11 genes. Get their names
-
-```{r}
-# extract probe IDs for hsa05165
-hsa05165_probes <- names(clst_tidy_3[["hsa05165"]][-1])
-
-# get metadata for those probes
-hsa05165_genes <- pid_all[pid_all$probe_id %in% hsa05165_probes, ]
-
-# join with original limma results
-hsa05165_limma <- dplyr::left_join(hsa05165_genes, 
-                                   dplyr::select(sig_PET_pos_v_neg, -gene_symbol, -entrez_id, -ensembl_id), 
-                                   by = "probe_id")
-
-# create volcano plot
-vol_plot(hsa05165_limma, xvar = "logFC", yvar = "P.Value", title = "Original limma results for human papillomavirus infection network", FDR = F, xlim_start = -0.3, xlim_end = 0.4)
-
-```
-
-## Intersection of genes found by different approaches
-
-Acquire tables of genes found to be significant from each approach
-```{r}
-# load table of original limma results
-sig_PET_pos_v_neg <- read.table(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/sig_PET_pos_v_neg.txt"),
-                                header = T)
-
-# load table of SNP genes
 

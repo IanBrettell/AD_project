@@ -57,7 +57,7 @@ I was using the wrong ID data previously - we will run the above again substitut
 exdata <- read.delim("~/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression.txt", sep = "", header = T)
 dim(exdata)
 head(exdata)
-metadata <- read.delim("~/Dropbox/eQTL/Data/aibl-ids-6.0.0-201712010300.txt", sep = "\t", header = T)
+metadata <- read.delim("~/Dropbox/eQTL/Data/aibl-ids-6.0.0-201712010300.txt", sep = "\t", header = T) ## NOTE: this file isn't actually in the Dropbox - I just put it there on my local computer. Will need to be uploaded. 
 dim(metadata)
 head(metadata)
 ids2 <- read.delim("~/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression_IDs_UpdtdDec2017.txt", sep = " ")
@@ -2517,9 +2517,14 @@ dingo_filtered_probes <- unique(unlist(lapply(filtered_clusters1, function(x){
 length(dingo_filtered_probes)
 
 # save RData file of filtered_clusters and dingo_filtered_probes
-save(filtered_clusters, file = "C:/Users/bre227/Documents/R/AD_project/Data/Networks/filtered_clusters.RData")
+save(filtered_clusters, file = "~/Desktop/Uni Air/CSIRO/AD_project/Working/networks/filtered_clusters.RData")
 
-save(dingo_filtered_probes, file = "C:/Users/bre227/Documents/R/AD_project/Data/Networks/dingo_filtered_probes.RData")
+save(dingo_filtered_probes, file = "~/Desktop/Uni Air/CSIRO/AD_project/Working/networks/dingo_filtered_probes.RData")
+
+
+## to reload
+# load(url("https://github.com/IanBrettell/AD_project/raw/master/Working/networks/dingo_filtered_probes.RData"))
+# load(url("https://github.com/IanBrettell/AD_project/raw/master/Working/networks/filtered_clusters.RData"))
 
 ```
 This is the same number of unique probes as in 'cluster_genexp', which means the latter had already been filtered. 
@@ -2553,6 +2558,51 @@ For Monday:
 ## PCA for clusters with most DE genes in them
 
 ### Create function to create eigenvalues and run limma
+
+```{r}
+end_eigen <- function(cluster_list){
+  # create eigenvalues
+  ll <- lapply(cluster_list, function (x) {
+    xm <- as.matrix(log(x[,-1])) # creates a matrix, using log to standardise
+    svd.decomp2 <- svd(xm) # applies singular value decomposition
+    svd.v <- svd.decomp2$v # pulls out the matrix whose columns contain the right singular vectors of xm
+    X.pca <- xm %*% svd.v # multiplies the original 'xm' matrix by the right singular vectors matrix
+    xout <-  X.pca[,1] # takes the first eigemvalue for each individual
+    return(xout)
+  })
+  
+  # turn it into a data frame
+  lld <- do.call(rbind.data.frame,ll) # creates a data frame of eigenvalues
+  lld2 <- t(lld) # transpose so that individuals are rows
+  rownames(lld2) <- cluster_list[[1]][,1]
+  colnames(lld2) <- names(cluster_list)
+
+  # filter data and create contrasts
+  require(RCurl)
+  keymeta <- read.delim(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/key_metadata.txt"), header = T) # read key metadata
+  lld3 <- lld2[as.character(keymeta$AIBL.Id),] # put eigenvalue data in same order as keymeta
+  kp <- ifelse(is.na(keymeta$PET)==T,FALSE,TRUE) # create vector of TRUE/FALSE for recorded PET status, to determine which ones are missing
+  keymeta1 <- keymeta[kp,] # restrict metadata for just those with recorded PET status
+  keymeta1 <- keymeta1[-c(grep(c("771|914|918"), keymeta1$AIBL.Id)), ] # remove outliers idenfitied with PCA on expression data
+  Y1 <- factor(as.character(keymeta1$PET)) # create factor vector, where NEG = 1, POS = 2
+  lld4 <- lld3[kp,] # remove individuals that do not have PET status recorded
+  lld4 <- lld4[-c(grep(c("771|914|918"), rownames(lld4))), ] # remove outliers identified with PCA on expression data
+  treat1<-factor(c(Y1), labels=c("Normal","Alzheimers")) # create vector of factors
+  design_treat1<-model.matrix(~0+treat1) # create model matrix
+  colnames(design_treat1) <- c("Normal","Alzheimers")
+  contrast.matrix_treat1<-makeContrasts(Normal-Alzheimers, levels=design_treat1) # create contrast
+
+  # run limma
+  x1 <- t(lld4) # Transpose data into matrix for limma fit
+  fit.lm1<-lmFit(x1,design_treat1) # fit a linear model using the matrix x1 from above
+  fit1.c <-contrasts.fit(fit.lm1,contrast.matrix_treat1) # use contrasts made above
+  fit.eb1<- eBayes(fit1.c) # compute Bayes statistics
+  topALL1<-toptable(fit=fit1.c, eb=fit.eb1, adjust="fdr", n=length(cluster_list), genelist=colnames(lld4))## comparison treated - untreated
+}
+```
+
+
+### Create function to create eigenvalues, run limma and plot
 ```{r}
 # create function for PCA analysis
 
@@ -2575,7 +2625,7 @@ end_pca_plot <- function(cluster_list, title){
   colnames(lld2) <- names(cluster_list)
 
   # filter data and create contrasts
-  keymeta <- read.table("C:/Users/bre227/Documents/R/AD_project/Working/key_metadata.txt", header = T) # read key metadata
+  keymeta <- read.delim(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/key_metadata.txt"), header = T) # read key metadata
   lld3 <- lld2[as.character(keymeta$AIBL.Id),] # put eigenvalue data in same order as keymeta
   kp <- ifelse(is.na(keymeta$PET)==T,FALSE,TRUE) # create vector of TRUE/FALSE for recorded PET status, to determine which ones are missing
   keymeta1 <- keymeta[kp,] # restrict metadata for just those with recorded PET status
@@ -2821,25 +2871,6 @@ end_pca_plot(point1_percentile, "PCA using END genes (0.1% threshold)")
 ***
 
 *19 February 2018*
-
-Create tables of annotated significant genes and SNPs from all the analyses
-
-Original limma on gene expression data
-```{r}
-sig_PET_pos_v_neg
-```
-
-SNP association
-
-```{r}
-
-```
-
-eQTL
-
-```{r}
-
-```
 
 *Meeting with JD and MV*
 
@@ -3111,13 +3142,27 @@ vol_plot(hsa05165_limma, xvar = "logFC", yvar = "P.Value", title = "Original lim
 
 ## Intersection of genes found by different approaches
 
-Acquire tables of genes found to be significant from each approach
+### Acquire tables of genes found to be significant from each approach
 ```{r}
 # load table of original limma results
-sig_PET_pos_v_neg <- read.table(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/sig_PET_pos_v_neg.txt"),
+sig_orig_limma <- read.delim(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/sig_PET_pos_v_neg.txt"),
+                                header = T)
+# load table of SNPs (association)
+sig_snps_assoc <-  read.delim(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/sig_PET_pos_v_neg_alleles_annotated.txt"),
                                 header = T)
 
-# load table of SNP genes
+# load table of SNPs (logistic regression)
+sig_snps_log <- read.delim(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/sig_PET_pos_v_neg_snps.txt"),
+                          header = T)
+
+# load table of eQTL SNPs and genes
+sig_eqtl_snps <- read.delim(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/eqtl_snps.txt"))
+sig_eqtl_gns <- read.delim(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/eqtl_gns.txt"),
+                           header = T)
+```
+
+### Acquire list of genes found in most differentially expressed networks using END
+```{r}
 
 ```
 
