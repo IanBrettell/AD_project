@@ -728,7 +728,7 @@ In accordance with the guide here: <http://zzz.bwh.harvard.edu/plink/data.shtml>
 Create PED file
 
 ```{r}
-ped <- read.table("~/Desktop/Uni Air/CSIRO/AD_project/Working/genotype_data.txt", header = T)
+ped <- read.table(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/genotype_data.txt"), header = T)
 
 # find unique values across genotype data
 as.character(unique(unlist(ped[, 5:ncol(ped)])))
@@ -798,7 +798,7 @@ write.table(map, "~/Desktop/Uni Air/CSIRO/AD_project/Working/plink/snp_data.map"
 Reformat ped into PED format
 ```{r}
 ped2 <- ped[, -c(1:4)] # remove extraneous columns
-meta <- read.table("~/Desktop/Uni Air/CSIRO/AD_project/Working/key_metadata.txt", header = T) # read in metadata
+meta <- read.table("~/Dropbox/eQTL/Coding/AD_project/Working/key_metadata.txt", header = T) # read in metadata
 colnames(ped2) <- gsub("X", "", colnames(ped2)) # remove "X" from colnames
 ped2 <- data.frame(t(ped2), stringsAsFactors = F) # transpose ped2
 ped2$AIBL.Id <- rownames(ped2) # make a new column with the row names (AIBL Ids) to use to bind with metadata
@@ -834,7 +834,7 @@ write.table(ped4, "~/Desktop/Uni Air/CSIRO/AD_project/Working/plink/snp_data.ped
 Obtain reference allele from BioMart query, in accordance with: <http://zzz.bwh.harvard.edu/plink/dataman.shtml#refallele> 
 ```{r}
 # read in table
-snp_gns <- read.delim("~/Desktop/Uni Air/CSIRO/AD_project/Working/aibl_snp_genes.txt", header = T)
+snp_gns <- read.delim("~/Dropbox/eQTL/Coding/AD_project/Working/aibl_snp_genes.txt", header = T)
 ref_al <- dplyr::select(snp_gns, refsnp_id, minor_allele)
 ref_al <- as.tibble(sapply(ref_al, as.character), stringsAsFactors = F)
 ref_al <- ref_al[!duplicated(ref_al), ]
@@ -847,8 +847,8 @@ I fed the files to PLINK using the following code: `./plink --file snp_data --ma
 Take a look at the files.
 
 ```{r}
-pk_ass <- read.table("~/Desktop/Uni Air/CSIRO/AD_project/Working/plink/plink.assoc", na.strings = NA, header = T, fill = T)
-pk_fsh <- read.table("~/Desktop/Uni Air/CSIRO/AD_project/Working/plink/plink.assoc.fisher", na.strings = NA, header = T, fill = T)
+pk_ass <- read.table("~/Dropbox/eQTL/Coding/AD_project/Working/plink/plink.assoc", na.strings = NA, header = T, fill = T)
+pk_fsh <- read.table("~/Dropbox/eQTL/Coding/AD_project/Working/plink/plink.assoc.fisher", na.strings = NA, header = T, fill = T)
 
 length(which(pk_ass$P < 0.05))
 length(which(pk_fsh$P < 0.05))
@@ -861,7 +861,7 @@ Shows that the Fisher exact test output had fewer significant SNPs, so we'll pre
 sig_pk <- pk_fsh[(pk_fsh$P < 0.05) == T &!is.na(pk_fsh$P), ]
 dim(sig_pk)
 # merge with gene ids from 'aible_snp_genes.txt' file
-snp_gns <- read.delim("~/Desktop/Uni Air/CSIRO/AD_project/Working/aibl_snp_genes.txt", sep = "\t", header = T, stringsAsFactors = F)
+snp_gns <- read.delim("~/Dropbox/eQTL/Coding/AD_project/Working/aibl_snp_genes.txt", sep = "\t", header = T, stringsAsFactors = F)
 library(dplyr)
 sig_pk <- left_join(sig_pk, snp_gns, by = c("SNP" = "refsnp_id"))
 # note that some SNPs map to multiple genes
@@ -896,7 +896,7 @@ write.table(sig_pk, "~/Desktop/Uni Air/CSIRO/AD_project/Working/sig_PET_pos_v_ne
 
 Combine data with probe id (by entrez id, which is the most annotated of gene ids)
 ```{r}
-probes <- read.delim("~/Desktop/Uni Air/CSIRO/AD_project/Working/affy_probes_annotated.txt", header = T, sep = "\t")
+probes <- read.delim("~/Dropbox/eQTL/Coding/AD_project/Working/affy_probes_annotated.txt", header = T, sep = "\t")
 sig_pk <- left_join(sig_pk, probes, by = "entrez_id")
 # remove second ensembl id and gene symbol columns (they have no additional information)
 sig_pk <- dplyr::select(sig_pk, -ensembl_id.y, -gene_symbol, ensembl_id = "ensembl_id.x")
