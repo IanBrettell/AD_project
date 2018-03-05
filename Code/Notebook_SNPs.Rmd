@@ -803,8 +803,8 @@ length(unique(SNP_genes_full$refsnp_id[!is.na(SNP_genes_full$ensembl_gene_stable
 SNP_genes_full$hgnc_symbol <- as.character(SNP_genes_full$hgnc_symbol) # convert to character
 SNP_genes_full$hgnc_symbol[SNP_genes_full$hgnc_symbol == ""] <- NA # replace blank values with NA
 
-# write table
-write.table(SNP_genes_full, "C:/Users/bre227/Documents/R/AD_project/Working/aibl_snp_genes.txt", sep = "\t", col.names = T, row.names = F, quote = F)
+## write table
+# write.table(SNP_genes_full, "C:/Users/bre227/Documents/R/AD_project/Working/aibl_snp_genes.txt", sep = "\t", col.names = T, row.names = F, quote = F)
 ```
 
 ## Get gene names and locations for proxy snps
@@ -1216,12 +1216,13 @@ length(unique(sig_pk$ensembl_id))
 Obtain reference allele from BioMart query, in accordance with: <http://zzz.bwh.harvard.edu/plink/dataman.shtml#refallele> 
 ```{r}
 # read in table
-snp_gns <- read.delim("C:/Users/bre227/Documents/R/AD_project/Working/aibl_snp_genes.txt", header = T)
+snp_gns <- read.delim(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/aibl_snp_genes.txt"), header = T)
 ref_al <- dplyr::select(snp_gns, refsnp_id, minor_allele)
 ref_al <- as.tibble(sapply(ref_al, as.character), stringsAsFactors = F)
 ref_al <- ref_al[!duplicated(ref_al), ]
 
-write.table(ref_al, "C:/Users/bre227/Documents/R/AD_project/Working/plink/ref_alleles.txt", row.names = F, col.names = F, quote = F, sep = "\t")
+## write table
+# write.table(ref_al, "C:/Users/bre227/Documents/R/AD_project/Working/plink/ref_alleles.txt", row.names = F, col.names = F, quote = F, sep = "\t")
 ```
 
 Write covariate file, in accordance with: <http://zzz.bwh.harvard.edu/plink/data.shtml#covar>
@@ -1234,7 +1235,9 @@ colnames(cov)[colnames(cov) == "Demographic.Sex"] <- "Sex"
 cov$PET <- NULL # because it's already in the PED file
 cov$FID <- cov$AIBL.Id # to make a family ID column - see <http://zzz.bwh.harvard.edu/plink/data.shtml#ped>
 cov <- dplyr::select(cov, FID, IID = "AIBL.Id", everything())
-write.table(cov, "C:/Users/bre227/Documents/R/AD_project/Working/plink/cov.txt", row.names = F, col.names = T, quote = F, sep = "\t")
+
+## write table
+# write.table(cov, "C:/Users/bre227/Documents/R/AD_project/Working/plink/cov.txt", row.names = F, col.names = T, quote = F, sep = "\t")
 ```
 
 Tried to run `./plink --file snp_data --logistic --genotypic --beta --reference-allele ref_alleles.txt --covar.txt` but it returned the error message: "No file [snp_data.fam] exists."
@@ -1371,7 +1374,7 @@ Read in data.
 exdata <- read.delim("~/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression.txt", sep = "", header = T)
 ids2 <- read.delim("~/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression_IDs_UpdtdDec2017.txt", sep = " ")
 colnames(exdata) <- as.vector(ids2$x) # replace colnames with ids2
-meta <- read.delim("C:/Users/bre227/Documents/R/AD_project/Working/key_metadata.txt", header = T, sep = "\t")
+meta <- read.delim(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/key_metadata.txt"), header = T, sep = "\t")
 ```
 
 ### Put into format required by `MatrixEQTL` package.
@@ -1419,7 +1422,7 @@ We will therefore get another plink output to find calculate which alleles are m
 
 ```{r}
 # import plink data on allele frequencies
-pk_frq <- read.table("C:/Users/bre227/Documents/R/AD_project/Working/plink/allele_freq.assoc.fisher", na.strings = NA, header = T, fill = T)
+pk_frq <- read.table(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/plink/allele_freq.assoc.fisher"), na.strings = NA, header = T, fill = T)
 pk_frq <- dplyr::select(pk_frq, snp = SNP, pk_major_allele = A2, pk_minor_allele = A1)
 
 # create comparison data frame
@@ -1569,9 +1572,9 @@ Set up parameters for eQTL
 ```{r}
 library(MatrixEQTL)
 useModel = modelLINEAR
-SNP_file_name = "C:/Users/bre227/Documents/R/AD_project/Working/matrixeqtl/snps.txt"
-expression_file_name = "C:/Users/bre227/Documents/R/AD_project/Working/matrixeqtl/expr.txt"
-covariates_file_name = "C:/Users/bre227/Documents/R/AD_project/Working/matrixeqtl/covs.txt"
+SNP_file_name = "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/snps.txt"
+expression_file_name = "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/expr.txt"
+covariates_file_name = "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/covs.txt"
 output_file_name = tempfile()
 
 pvOutputThreshold = 1e-2
@@ -2109,7 +2112,7 @@ colnames(lld2) <- names(cluster_genexp)
 Add metadata and gene/cluster annotation info
 ```{r}
 genemap <- read.csv("~/Dropbox/eQTL/Results/cluster_data/gene_clusters_hsa_map.csv") # note that 5 networks are missing from 'cluster_genexp' - why?
-keymeta <- read.table("C:/Users/bre227/Documents/R/AD_project/Working/key_metadata.txt", header = T)
+keymeta <- read.table(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/key_metadata.txt"), header = T)
 
 # number of unique networks
 length(unique(genemap$hsa))
@@ -2557,10 +2560,34 @@ For Monday:
 
 ## PCA for clusters with most DE genes in them
 
-### Create function to create eigenvalues and run limma
+### Create function to create eigenvalues
 
 ```{r}
 end_eigen <- function(cluster_list){
+  # create eigenvalues
+  ll <- lapply(cluster_list, function (x) {
+    xm <- as.matrix(log(x[,-1])) # creates a matrix, using log to standardise
+    svd.decomp2 <- svd(xm) # applies singular value decomposition
+    svd.v <- svd.decomp2$v # pulls out the matrix whose columns contain the right singular vectors of xm
+    X.pca <- xm %*% svd.v # multiplies the original 'xm' matrix by the right singular vectors matrix
+    xout <-  X.pca[,1] # takes the first eigemvalue for each individual
+    return(xout)
+  })
+  
+  # turn it into a data frame
+  lld <- do.call(rbind.data.frame,ll) # creates a data frame of eigenvalues
+  lld2 <- t(lld) # transpose so that individuals are rows
+  rownames(lld2) <- cluster_list[[1]][,1]
+  colnames(lld2) <- names(cluster_list)
+  
+  return(lld2)
+}
+```
+
+
+### Create function to create eigenvalues and run limma
+```{r}
+end_limma <- function(cluster_list){
   # create eigenvalues
   ll <- lapply(cluster_list, function (x) {
     xm <- as.matrix(log(x[,-1])) # creates a matrix, using log to standardise
@@ -2929,7 +2956,7 @@ p_table_1 <- left_join(init_lim_table,
                        by = c("probe_id" = "name"))
 ```
 
-How many of the initial DE genes fell within netorks?
+How many of the initial DE genes fell within networks?
 
 ```{r}
 length(which(sapply(p_table_1$networks, is.null) == F))
@@ -2947,7 +2974,10 @@ p_table_2 <- dplyr::left_join(p_table_1,
 Get END results for clusters containing DE genes only
 ```{r, warning = F}
 # get table of p-values
-end_clsts_de_gns_only <- end_eigen(clst_tidy_3)
+end_clsts_de_gns_only <- end_limma(clst_tidy_3)
+
+## write table
+# write.table(end_clsts_de_gns_only, "~/Desktop/Uni Air/CSIRO/AD_project/Working/end_clsts_de_gns_only.txt", col.names = T, row.names = F, quote = F, sep = "\t")
 
 # join to table
 p_table_3 <- dplyr::left_join(p_table_2,
@@ -2960,7 +2990,7 @@ p_table_3 <- dplyr::left_join(p_table_2,
 For 0.5% threshold
 
 ```{r}
-end_results_0.5 <- end_eigen(half_percentile)
+end_results_0.5 <- end_limma(half_percentile)
 # join to table
 p_table_4 <- dplyr::left_join(p_table_3,
                               dplyr::select(end_results_0.5, ID, logFC_END_0.5 = "logFC", p_value_END_0.5 = "P.Value", FDR_END_0.5 = "adj.P.Val"),
@@ -2970,7 +3000,7 @@ p_table_4 <- dplyr::left_join(p_table_3,
 For 0.25% threshold
 
 ```{r}
-end_results_0.25 <- end_eigen(quarter_percentile)
+end_results_0.25 <- end_limma(quarter_percentile)
 # join to table
 p_table_5 <- dplyr::left_join(p_table_4,
                               dplyr::select(end_results_0.25, ID, logFC_END_0.25 = "logFC", p_value_END_0.25 = "P.Value", FDR_END_0.25 = "adj.P.Val"),
@@ -2981,7 +3011,7 @@ p_table_5 <- dplyr::left_join(p_table_4,
 For 0.1% threshold
 
 ```{r}
-end_results_0.1 <- end_eigen(point1_percentile)
+end_results_0.1 <- end_limma(point1_percentile)
 # join to table
 p_table_6 <- dplyr::left_join(p_table_5,
                               dplyr::select(end_results_0.1, ID, logFC_END_0.1 = "logFC", p_value_END_0.1 = "P.Value", FDR_END_0.1 = "adj.P.Val"),
@@ -2994,7 +3024,7 @@ For 1% threshold, and filter data for plotting
 p_table_7 <- p_table_6[!is.na(p_table_6$rooted_network), ]
 
 # add results for END 1 percentile
-end_results_1 <- end_eigen(one_percentile)
+end_results_1 <- end_limma(one_percentile)
 
 p_table_7 <- dplyr::left_join(p_table_7,
                               dplyr::select(end_results_1, ID, logFC_END_1 = "logFC", p_value_END_1 = "P.Value", FDR_END_1 = "adj.P.Val"),
@@ -3004,8 +3034,6 @@ p_table_7 <- dplyr::left_join(p_table_7,
 ### Create function for volcano plots
 
 ```{r}
-
-# works
 
 vol_plot <- function(limma_output, xvar = "logFC_column", yvar = "p_value_column", alpha = 0.05, title = "Volcano plot", FDR = c(T, F), label_limit = alpha, label_type = c("gene", "network"), xlim_start = -0.15, xlim_end = 0.2){
   # load required packages
@@ -3147,23 +3175,183 @@ vol_plot(hsa05165_limma, xvar = "logFC", yvar = "P.Value", title = "Original lim
 # load table of original limma results
 sig_orig_limma <- read.delim(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/sig_PET_pos_v_neg.txt"),
                                 header = T)
+head(sig_orig_limma)
+
 # load table of SNPs (association)
 sig_snps_assoc <-  read.delim(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/sig_PET_pos_v_neg_alleles_annotated.txt"),
                                 header = T)
+head(sig_snps_assoc)
 
 # load table of SNPs (logistic regression)
 sig_snps_log <- read.delim(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/sig_PET_pos_v_neg_snps.txt"),
                           header = T)
+head(sig_snps_log)
 
 # load table of eQTL SNPs and genes
 sig_eqtl_snps <- read.delim(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/eqtl_snps.txt"))
+head(sig_eqtl_snps)
+
 sig_eqtl_gns <- read.delim(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/eqtl_gns.txt"),
                            header = T)
+head(sig_eqtl_gns)
+
+# load table of p-values for all clusters containing DE genes
+end_clsts_de_gns_only <- read.delim(text = getURL("https://raw.githubusercontent.com/IanBrettell/AD_project/master/Working/end_clsts_de_gns_only.txt"),
+                                    header = T)
+head(end_clsts_de_gns_only)
 ```
 
 ### Acquire list of genes found in most differentially expressed networks using END
-```{r}
 
+#### Make one list with names as probe IDs
+```{r}
+# get p-values for each gene in each cluster
+clst_pvals <- lapply(clst_tidy_3, function(x){
+  sapply(names(x)[-1], function(y){
+    sig_orig_limma$P.Value[sig_orig_limma$probe_id %in% y]
+  })
+})
+
+# remove all networks that weren't significant at the FDR level
+sig_clst_pvals_prbs <- clst_pvals[names(clst_pvals) %in% end_clsts_de_gns_only$ID[end_clsts_de_gns_only$adj.P.Val < 0.05]]
+
+# sort each list in order of p-value
+sort_clst_pvals_prbs <- lapply(sig_clst_pvals_prbs, sort)
+
+# sort the whole list by significance of the cluster from the END analysis
+sort_all_clstrs_prbs <- sort_clst_pvals_prbs[match(sig_end_clsts_de_gns_only$ID, names(sort_clst_pvals_prbs))]
+```
+
+#### Make another with with names as gene names
+```{r}
+# replace probe IDs with gene names
+clst_pvals_gns <- lapply(clst_pvals, function(x){
+  out <- x
+  names(out) <-  as.character(sig_orig_limma$gene_symbol[sig_orig_limma$probe_id %in% names(x)])
+  return(out)
+})
+
+# remove all networks that weren't significant at the FDR level
+sig_clst_pvals_gns <- clst_pvals_gns[names(clst_pvals_gns) %in% end_clsts_de_gns_only$ID[end_clsts_de_gns_only$adj.P.Val < 0.05]]
+
+# sort each list in order of p-value
+sort_clst_pvals_gns <- lapply(sig_clst_pvals_gns, sort)
+
+# sort the whole list by significance of the cluster from the END analysis
+sort_all_clstrs_gns <- sort_clst_pvals_gns[match(sig_end_clsts_de_gns_only$ID, names(sort_clst_pvals_gns))]
+```
+
+### Find which genes in the sorted significant cluster list intersect with genes that were found to be significant in the other analyses
+
+#### Find which genes in the clusters were associated in the SNP assoc
+```{r}
+intersect_clstrs_snp_assoc <- lapply(sort_all_clstrs_gns, function(x){
+  if (length(x[names(x) %in% sig_snps_assoc$hgnc_symbol]) > 0){
+    return(x[names(x) %in% sig_snps_assoc$hgnc_symbol])
+  } else {
+    NULL
+  }
+})
+
+# how many clusters had genes that were also associated in the SNP assoc?
+length(which(lapply(intersect_clstrs_snp_assoc, is.null) == F))
+```
+
+#### Find which genes in the clusters were associated in the SNP log
+
+```{r}
+intersect_clstrs_snp_log <- lapply(sort_all_clstrs_gns, function(x){
+  if (length(x[names(x) %in% sig_snps_log$hgnc_symbol]) > 0){
+    return(x[names(x) %in% sig_snps_log$hgnc_symbol])
+  } else {
+    NULL
+  }
+})
+
+# how many clusters had genes that were also associated in the SNP log?
+length(which(lapply(intersect_clstrs_snp_log, is.null) == F))
+```
+
+#### Find which genes in the clusters were DE in the eQTL
+```{r}
+intersect_clstrs_eqtl <- lapply(sort_all_clstrs_gns, function(x){
+  if (length(x[names(x) %in% sig_eqtl_gns$gene_symbol]) > 0){
+    return(x[names(x) %in% sig_eqtl_gns$gene_symbol])
+  } else {
+    NULL
+  }
+})
+
+# how many clusters had genes that were also DE in the eQTL?
+length(which(lapply(intersect_clstrs_eqtl, is.null) == F))
+
+# which genes are they?
+aa <- lapply(intersect_clstrs_eqtl, function(x){
+  names(x)[!is.null(x)]
+})
+int_gns <- setNames(unlist(aa, use.names = F), rep(names(aa), lengths(aa)))
+rm(aa)
+int_gns
+
+# unique genes?
+unique(int_gns)
+```
+
+### Create data frame for intersecting genes
+```{r, warning = F}
+int_gns_df <- data.frame(network_id = names(int_gns), intersecting_gene_eqtl = int_gns, row.names = NULL) %>%
+  dplyr::left_join(dplyr::select(genemap, hsa, description = "name"), by = c("network_id" = "hsa")) %>% 
+  dplyr::left_join(dplyr::select(sig_end_clsts_de_gns_only, ID, fdr_cluster = "adj.P.Val"), by = c("network_id" = "ID")) %>% 
+  dplyr::left_join(dplyr::select(sig_eqtl_gns, gene_symbol, fdr_eqtl_gene = "FDR", assoc_snp = "snps"), by = c("intersecting_gene_eqtl" = "gene_symbol")) %>% 
+  dplyr::select(network_id, description, fdr_cluster, intersecting_gene_eqtl, fdr_eqtl_gene, assoc_snp)
+
+int_gns_df
+```
+
+## Boxplot for most differentiated networks
+
+### Get network eigenvalue and expression data for root gene in network hsa05165 - human papillomavirus infection
+```{r}
+# pull root gene from network
+rt <- names(sort_all_clstrs_prbs[['hsa05165']])[1]
+
+# get expression data for root gene
+hsa05165_eigen_plot <- cbind(exdata3[, 1:5], exdata3[rt])
+
+# Get eigenvalues for networks
+clst_eigens <- data.frame(end_eigen(clst_tidy_3))
+
+# Combine data frames
+clst_eigens$AIBL.Id <- as.integer(rownames(clst_eigens))
+hsa05165_eigen_plot <- dplyr::left_join(hsa05165_eigen_plot,
+                                        dplyr::select(clst_eigens, AIBL.Id, hsa05165),
+                                        by = "AIBL.Id")
+```
+
+### Plot
+
+```{r}
+# gene expression
+ggplot(data = hsa05165_eigen_plot, aes(PET, `3156307`, fill = PET)) +
+  geom_boxplot()
+
+# network eigenvalues
+ggplot(data = hsa05165_eigen_plot, aes(PET, hsa05165, fill = PET)) +
+  geom_boxplot()
+```
+
+```{r}
+neg_prb <- ggplot(dplyr::filter(hsa05165_eigen_plot, PET == "NEG"), aes(PET, `3156307`, fill = PET)) +
+  geom_boxplot()
+neg_eig <- ggplot(dplyr::filter(hsa05165_eigen_plot, PET == "NEG"), aes(PET, hsa05165, fill = PET)) +
+  geom_boxplot()
+pos_prb <- ggplot(dplyr::filter(hsa05165_eigen_plot, PET == "POS"), aes(PET, `3156307`, fill = PET)) +
+  geom_boxplot()
+pos_eig <- ggplot(dplyr::filter(hsa05165_eigen_plot, PET == "POS"), aes(PET, hsa05165, fill = PET)) +
+  geom_boxplot()
+
+require(gridExtra)
+grid.arrange(neg_prb, neg_eig, pos_prb, pos_eig, ncol = 4)
 ```
 
 

@@ -1,7 +1,7 @@
 ---
 title: "AD project - summary to date"
 author: "Ian Brettell"
-date: "28 February 2018"
+date: "2 March 2018"
 output:
   html_document:
     number_sections: yes
@@ -16,7 +16,7 @@ output:
 
 ## Load data
 
-```{r}
+```{r, message = F}
 require(RCurl)
 # expression data 
 exdata <- read.delim("~/Dropbox/eQTL/Data/AIBL_expression_set/AIBL_Gene_Expression.txt", sep = "", header = T)
@@ -30,15 +30,14 @@ meta2 <- read.delim(text = getURL("https://raw.githubusercontent.com/IanBrettell
 
 ## Create initial exploratory plots
 
-Histogram of cohort's age
+### Histogram of cohort's age
 
 ```{r}
 hist(meta2$Age)
 ```
 
-
-Plot for whole dataset
-```{r}
+### Create data frame to plot whole dataset
+```{r, message = F, warning = F}
 library(tidyverse)
 exdata1 <- as_tibble(exdata)
 exdata1 <- as_tibble(t(exdata1)) # transpose to put samples in rows, genes in columns
@@ -48,6 +47,7 @@ exdata2 <- left_join(meta2, exdata1, by = "AIBL.Id") %>%
   na.omit # add metadata and remove PET and apoe4 columns with 'NA'
 rownames(exdata2) <- exdata2$AIBL.Id # to ensure the labels in the plots reflect the AIBL.Ids
 dim(exdata2)
+exdata2[, 1:10]
 ```
 
 Run PCA
@@ -217,7 +217,6 @@ xx3 <- as.list(x3[mapped_genes])
 xx3.1 <- as.matrix(unlist(xx3))
 ens <- xx3.1[rownames(xx3.1) %in% gns]
 length(ens)
-#[1] 14497
 
 ### Find Entrez IDs ###
 x4 <- huex10sttranscriptclusterENTREZID
@@ -232,7 +231,7 @@ length(entz)
     
 ```
 
-## Match probes, gene symbols, Ensembl IDs, and Entrez IDs with the list of statistically significant genes.
+## Match probes, gene symbols, Ensembl IDs, and Entrez IDs with the list of statistically significant genes
 
 Create data frame of all probe matches with identifiers
 
@@ -253,7 +252,7 @@ pid_all <- dplyr::left_join(pid_symb, pid_ent, by = "probe_id") %>%
                 ensembl_id = "xx3.1") %>% 
   dplyr::select(probe_id, everything())
 
-write.table(pid_all, "~/Desktop/Uni Air/CSIRO/AD_project/Working/affy_probes_annotated.txt", row.names = F, col.names = T, quote = F, sep = "\t")
+# write.table(pid_all, "~/Desktop/Uni Air/CSIRO/AD_project/Working/affy_probes_annotated.txt", row.names = F, col.names = T, quote = F, sep = "\t")
 
 # find how many probes are annotated
 length(which(pid_all$probe_id %in% rownames(exdata)))
@@ -277,7 +276,7 @@ signif_all <- dplyr::select(signif_apoe4_for_PET_yes, probe_id, P.Value) %>%
 
 nrow(signif_all)
 ```
-Therefore 2438 genes are expressed differentially across at least two contrasts
+Therefore `r nrow(signif_all)` genes are expressed differentially across at least two contrasts
 
 
 Bind gene ids to 'signif_all'
@@ -290,7 +289,7 @@ There are many NAs in the 'gene_symbol' column, even though there are 34,127 uni
 ```{r}
 length(setdiff(signif_all$probe_id, pid_all$probe_id))
 ```
-Shows that there are 1000 probe ids in 'signif_all' that are not in 'pid_all', i.e. they do not have any annotation data.
+Shows that there are `r length(setdiff(signif_all$probe_id, pid_all$probe_id))` probe ids in 'signif_all' that are not in 'pid_all', i.e. they do not have any annotation data.
 
 Confirmed by:
 ```{r}
@@ -302,7 +301,7 @@ So are all probe_ids in the expression data in 'pid_symb'?
 ```{r}
 length(setdiff(rownames(exdata), pid_symb$probe_id))
 ```
-7,186/22,011 probes are not accounted for in the annotation data?
+`r length(setdiff(rownames(exdata), pid_symb$probe_id))`/`r nrow(exdata)` probes are not accounted for in the annotation data?
 
 Confirm this:
 
@@ -553,8 +552,8 @@ length(unique(SNP_genes_full$refsnp_id[!is.na(SNP_genes_full$ensembl_gene_stable
 SNP_genes_full$hgnc_symbol <- as.character(SNP_genes_full$hgnc_symbol) # convert to character
 SNP_genes_full$hgnc_symbol[SNP_genes_full$hgnc_symbol == ""] <- NA # replace blank values with NA
 
-# write table
-write.table(SNP_genes_full, "~/Desktop/Uni Air/CSIRO/AD_project/Working/aibl_snp_genes.txt", sep = "\t", col.names = T, row.names = F, quote = F)
+## write table
+# write.table(SNP_genes_full, "~/Desktop/Uni Air/CSIRO/AD_project/Working/aibl_snp_genes.txt", sep = "\t", col.names = T, row.names = F, quote = F)
 ```
 
 ***
@@ -628,8 +627,8 @@ proxy_gns_uq <- proxy_genes_full[is.na(proxy_genes_full$hgnc_symbol) == F, ] # c
 length(unique(proxy_gns_uq$refsnp_id))
 length(unique(proxy_gns_uq$hgnc_symbol)) 
 
-# write table
-write.table(proxy_genes_full, "~/Desktop/Uni Air/CSIRO/AD_project/Working/proxy_snp_gns.txt", row.names = F, col.names = T, quote = F, sep = "\t")
+## write table
+# write.table(proxy_genes_full, "~/Desktop/Uni Air/CSIRO/AD_project/Working/proxy_snp_gns.txt", row.names = F, col.names = T, quote = F, sep = "\t")
 ```
 
 ***
@@ -714,7 +713,7 @@ gts <- gts[-c(1:3), ] # remove extraneous first three rows
 Write table to working folder
 
 ```{r}
-write.table(gts, file = "~/Desktop/Uni Air/CSIRO/AD_project/Working/genotype_data.txt", sep = "\t")
+# write.table(gts, file = "~/Desktop/Uni Air/CSIRO/AD_project/Working/genotype_data.txt", sep = "\t")
 ```
 
 ***
@@ -792,7 +791,7 @@ Write map file
 map <- data.frame(lapply(map, function(x){
   gsub(" ", "", x)
 }), stringsAsFactors = F)
-write.table(map, "~/Desktop/Uni Air/CSIRO/AD_project/Working/plink/snp_data.map", row.names = F, col.names = F, quote = F, sep = "\t")
+# write.table(map, "~/Desktop/Uni Air/CSIRO/AD_project/Working/plink/snp_data.map", row.names = F, col.names = F, quote = F, sep = "\t")
 ```
 
 Reformat ped into PED format
@@ -827,8 +826,8 @@ ped4 <- data.frame(lapply(ped3, function(x){
 }), stringsAsFactors = F)
 ped4[is.na(ped4)] <- "0 0"
 
-# write file
-write.table(ped4, "~/Desktop/Uni Air/CSIRO/AD_project/Working/plink/snp_data.ped", row.names = F, col.names = F, quote = F, sep = "\t")
+## write file
+# write.table(ped4, "~/Desktop/Uni Air/CSIRO/AD_project/Working/plink/snp_data.ped", row.names = F, col.names = F, quote = F, sep = "\t")
 ```
 
 Obtain reference allele from BioMart query, in accordance with: <http://zzz.bwh.harvard.edu/plink/dataman.shtml#refallele> 
@@ -839,7 +838,7 @@ ref_al <- dplyr::select(snp_gns, refsnp_id, minor_allele)
 ref_al <- as.tibble(sapply(ref_al, as.character), stringsAsFactors = F)
 ref_al <- ref_al[!duplicated(ref_al), ]
 
-write.table(ref_al, "~/Desktop/Uni Air/CSIRO/AD_project/Working/plink/ref_alleles.txt", row.names = F, col.names = F, quote = F, sep = "\t")
+# write.table(ref_al, "~/Desktop/Uni Air/CSIRO/AD_project/Working/plink/ref_alleles.txt", row.names = F, col.names = F, quote = F, sep = "\t")
 ```
 
 I fed the files to PLINK using the following code: `./plink --file snp_data --map3 --noweb --no-fid --no-parents --reference-allele ref_alleles.txt --assoc` and `./plink --file snp_data --map3 --noweb --no-fid --no-parents --reference-allele ref_alleles.txt --fisher`, which created the output files 'plink.assoc' and 'plink.assoc.fisher'. 
@@ -890,8 +889,8 @@ sig_pk <- dplyr::select(sig_pk,
                  strand, ensembl_id = "ensembl_gene_stable_id", 
                  hgnc_symbol, entrez_id = "entrezgene")
 
-# write table
-write.table(sig_pk, "~/Desktop/Uni Air/CSIRO/AD_project/Working/sig_PET_pos_v_neg_alleles_annotated.txt", col.names = T, row.names = F, quote = F, sep = "\t")
+## write table
+# write.table(sig_pk, "~/Desktop/Uni Air/CSIRO/AD_project/Working/sig_PET_pos_v_neg_alleles_annotated.txt", col.names = T, row.names = F, quote = F, sep = "\t")
 ```
 
 Combine data with probe id (by entrez id, which is the most annotated of gene ids)
@@ -921,7 +920,7 @@ colnames(cov)[colnames(cov) == "Demographic.Sex"] <- "Sex"
 cov$PET <- NULL # because it's already in the PED file
 cov$FID <- cov$AIBL.Id # to make a family ID column - see <http://zzz.bwh.harvard.edu/plink/data.shtml#ped>
 cov <- dplyr::select(cov, FID, IID = "AIBL.Id", everything())
-write.table(cov, "~/Desktop/Uni Air/CSIRO/AD_project/Working/plink/cov.txt", row.names = F, col.names = T, quote = F, sep = "\t")
+# write.table(cov, "~/Desktop/Uni Air/CSIRO/AD_project/Working/plink/cov.txt", row.names = F, col.names = T, quote = F, sep = "\t")
 ```
 
 Ran files on PLINK with the following command: `./plink --file snp_data --map3 --no-fid --no-parents --logistic --beta --reference-allele ref_alleles.txt --noweb --adjust --covar cov.txt`
@@ -991,8 +990,8 @@ nrow(snp_gns[grep("PICALM|BIN1|CR1|ABCA7|MS4A6A|CLU|FERMT2|DSG2|EPHA1|SORL1|ZCWP
 # now check how many hits we get with our significant SNPs list
 sig_snps_log[grep("PICALM|BIN1|CR1|ABCA7|MS4A6A|CLU|FERMT2|DSG2|EPHA1|SORL1|ZCWPW1", sig_snps_log$hgnc_symbol), ]
 
-# write file
-write.table(sig_snps_log, "~/Desktop/Uni Air/CSIRO/AD_project/Working/sig_PET_pos_v_neg_snps.txt", row.names = F, col.names = T, quote = F, sep = "\t")
+## write file
+# write.table(sig_snps_log, "~/Desktop/Uni Air/CSIRO/AD_project/Working/sig_PET_pos_v_neg_snps.txt", row.names = F, col.names = T, quote = F, sep = "\t")
 ```
 **Four genes**: *BIN1*, *CLU*, *PICALM*, and *ABCA7*.
 
@@ -1182,9 +1181,9 @@ meta <- meta[, cns]
 Write files
 
 ```{r}
-write.table(ped7, "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/snps.txt", col.names = T, row.names = F, quote = F, sep = "\t")
-write.table(meta, "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/covs.txt", col.names = T, row.names = F, quote = F, sep = "\t")
-write.table(exdata, "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/expr.txt", col.names = T, row.names = F, quote = F, sep = "\t")
+# write.table(ped7, "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/snps.txt", col.names = T, row.names = F, quote = F, sep = "\t")
+# write.table(meta, "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/covs.txt", col.names = T, row.names = F, quote = F, sep = "\t")
+# write.table(exdata, "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/expr.txt", col.names = T, row.names = F, quote = F, sep = "\t")
 ```
 
 ### Set up parameters for eQTL
@@ -1282,9 +1281,9 @@ pid_all$probe_id <- as.character(pid_all$probe_id)
 sig_eqtl_snps <- dplyr::left_join(sig_eqtls, snp_gns, by = c("snps" = "refsnp_id"))
 sig_eqtl_gns <- dplyr::left_join(sig_eqtls, pid_all, by = c("gene" = "probe_id"))
 
-# write files
-write.table(sig_eqtl_snps, "~/Desktop/Uni Air/CSIRO/AD_project/Working/eqtl_snps.txt", row.names = F, col.names = T, quote = F, sep = "\t")
-write.table(sig_eqtl_gns, "~/Desktop/Uni Air/CSIRO/AD_project/Working/eqtl_gns.txt", row.names = F, col.names = T, quote = F, sep = "\t")
+## write files
+# write.table(sig_eqtl_snps, "~/Desktop/Uni Air/CSIRO/AD_project/Working/eqtl_snps.txt", row.names = F, col.names = T, quote = F, sep = "\t")
+# write.table(sig_eqtl_gns, "~/Desktop/Uni Air/CSIRO/AD_project/Working/eqtl_gns.txt", row.names = F, col.names = T, quote = F, sep = "\t")
 
 # find any hits with the genes implicated in the 2018 study
 nrow(sig_eqtl_snps[grep("PICALM|BIN1|CR1|ABCA7|MS4A6A|CLU|FERMT2|DSG2|EPHA1|SORL1|ZCWPW1", sig_eqtl_snps$hgnc_symbol), ])
@@ -1320,7 +1319,7 @@ PET_pos_covs <- PET_pos_covs[-c(2, nrow(PET_pos_covs)), ] # remove PET and id ro
 PET_pos_covs$id <- rownames(PET_pos_covs)
 PET_pos_covs <- dplyr::select(PET_pos_covs, id, everything())
 rownames(PET_pos_covs) <- NULL
-write.table(PET_pos_covs, "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/pet_pos_covs.txt", col.names = T, row.names = F, quote = F, sep = "\t")
+# write.table(PET_pos_covs, "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/pet_pos_covs.txt", col.names = T, row.names = F, quote = F, sep = "\t")
 
 # create covariates file for neg status
 PET_neg_covs <- read.delim("~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/covs.txt", sep = "\t", header = T)
@@ -1335,7 +1334,7 @@ PET_neg_covs <- PET_neg_covs[-c(2, nrow(PET_neg_covs)), ]
 PET_neg_covs$id <- rownames(PET_neg_covs)
 PET_neg_covs <- dplyr::select(PET_neg_covs, id, everything())
 rownames(PET_neg_covs) <- NULL
-write.table(PET_neg_covs, "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/pet_neg_covs.txt", col.names = T, row.names = F, quote = F, sep = "\t")
+# write.table(PET_neg_covs, "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/pet_neg_covs.txt", col.names = T, row.names = F, quote = F, sep = "\t")
 ```
 
 ### Divide out expression data
@@ -1351,13 +1350,13 @@ exdata <- exdata[, colnames(exdata) %in% colnames(ped7)] # extract only those co
 pos_exdata <- exdata[, colnames(exdata) %in% colnames(PET_pos_covs)]
 pos_exdata$probe_id <- rownames(pos_exdata) # create column for probe ID and reorder
 pos_exdata <- dplyr::select(pos_exdata, probe_id, everything())
-write.table(pos_exdata, "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/pet_pos_expr.txt", col.names = T, row.names = F, quote = F, sep = "\t")
+# write.table(pos_exdata, "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/pet_pos_expr.txt", col.names = T, row.names = F, quote = F, sep = "\t")
 
 # for NEG group
 neg_exdata <- exdata[, colnames(exdata) %in% colnames(PET_neg_covs)]
 neg_exdata$probe_id <- rownames(neg_exdata) # create column for probe ID and reorder
 neg_exdata <- dplyr::select(neg_exdata, probe_id, everything())
-write.table(neg_exdata, "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/pet_neg_expr.txt", col.names = T, row.names = F, quote = F, sep = "\t")
+# write.table(neg_exdata, "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/pet_neg_expr.txt", col.names = T, row.names = F, quote = F, sep = "\t")
 ```
 
 ### Divide out genotype data
@@ -1370,12 +1369,12 @@ colnames(gtps) <- gsub("X", "", colnames(gtps))
 # for POS group
 pet_pos_gtps <- gtps[, colnames(gtps) %in% colnames(PET_pos_covs)]
 pet_pos_gtps <- cbind(snpid = gtps[, 1], pet_pos_gtps)
-write.table(pet_pos_gtps, "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/pet_pos_gtps.txt", col.names = T, row.names = F, quote = F, sep = "\t")
+# write.table(pet_pos_gtps, "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/pet_pos_gtps.txt", col.names = T, row.names = F, quote = F, sep = "\t")
 
 # for NEG group
 pet_neg_gtps <- gtps[, colnames(gtps) %in% colnames(PET_neg_covs)]
 pet_neg_gtps <- cbind(snpid = gtps[, 1], pet_neg_gtps)
-write.table(pet_neg_gtps, "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/pet_neg_gtps.txt", col.names = T, row.names = F, quote = F, sep = "\t")
+# write.table(pet_neg_gtps, "~/Desktop/Uni Air/CSIRO/AD_project/Working/matrixeqtl/pet_neg_gtps.txt", col.names = T, row.names = F, quote = F, sep = "\t")
 ```
 
 ### eQTL for POS group
@@ -1529,9 +1528,9 @@ dim(pos_sig_eqtls)
 pos_sig_eqtl_snps <- left_join(pos_sig_eqtls, snp_gns, by = c("snps" = "refsnp_id"))
 pos_sig_eqtl_gns <- left_join(pos_sig_eqtls, pid_all, by = c("gene" = "probe_id"))
 
-# write files
-write.table(pos_sig_eqtl_snps, "~/Desktop/Uni Air/CSIRO/AD_project/Working/pos_eqtl_snps.txt", row.names = F, col.names = T, quote = F, sep = "\t")
-write.table(pos_sig_eqtl_gns, "~/Desktop/Uni Air/CSIRO/AD_project/Working/pos_eqtl_gns.txt", row.names = F, col.names = T, quote = F, sep = "\t")
+## write files
+# write.table(pos_sig_eqtl_snps, "~/Desktop/Uni Air/CSIRO/AD_project/Working/pos_eqtl_snps.txt", row.names = F, col.names = T, quote = F, sep = "\t")
+# write.table(pos_sig_eqtl_gns, "~/Desktop/Uni Air/CSIRO/AD_project/Working/pos_eqtl_gns.txt", row.names = F, col.names = T, quote = F, sep = "\t")
 
 # number of unique SNPs
 length(unique(pos_sig_eqtl_snps$snps))
@@ -1569,9 +1568,9 @@ length(unique(neg_sig_eqtls$snps))
 neg_sig_eqtl_snps <- left_join(neg_sig_eqtls, snp_gns, by = c("snps" = "refsnp_id"))
 neg_sig_eqtl_gns <- left_join(neg_sig_eqtls, pid_all, by = c("gene" = "probe_id"))
 
-# write files
-write.table(neg_sig_eqtl_snps, "~/Desktop/Uni Air/CSIRO/AD_project/Working/neg_eqtl_snps.txt", row.names = F, col.names = T, quote = F, sep = "\t")
-write.table(neg_sig_eqtl_gns, "~/Desktop/Uni Air/CSIRO/AD_project/Working/neg_eqtl_gns.txt", row.names = F, col.names = T, quote = F, sep = "\t")
+## write files
+# write.table(neg_sig_eqtl_snps, "~/Desktop/Uni Air/CSIRO/AD_project/Working/neg_eqtl_snps.txt", row.names = F, col.names = T, quote = F, sep = "\t")
+# write.table(neg_sig_eqtl_gns, "~/Desktop/Uni Air/CSIRO/AD_project/Working/neg_eqtl_gns.txt", row.names = F, col.names = T, quote = F, sep = "\t")
 
 # create vectors of gene names for snps and differentially expressed genes
 neg_eqtl_snp_gns <- as.vector(na.omit(unique(neg_sig_eqtl_snps$hgnc_symbol)))
@@ -1795,7 +1794,7 @@ clst_tidy_1 <- lapply(clst_tidy, function(x) {
 
 # take all clusters with more than one gene that was found to be differentially expressed in the initial limma
 clst_tidy_2 <- lapply(clst_tidy, function(x) {
-  if (length(which(names(x) %in% sig_lim) == T) > 1){
+  if (length(which(names(x) %in% sig_lim) == T) >= 1){
     a <- which(names(x) %in% sig_lim)
     x[, c(1, a)]
   }
@@ -2407,25 +2406,6 @@ end_pca_plot(point1_percentile, "PCA using END genes (0.1% threshold)")
 
 *19 February 2018*
 
-Create tables of annotated significant genes and SNPs from all the analyses
-
-Original limma on gene expression data
-```{r}
-sig_PET_pos_v_neg
-```
-
-SNP association
-
-```{r}
-
-```
-
-eQTL
-
-```{r}
-
-```
-
 *Meeting with JD and MV*
 
 *Create a table of p-values: 
@@ -2467,7 +2447,7 @@ hsas <- apply(gns_in_clstrs, 1, function(x) {
 names(hsas) <- gns_in_clstrs$probe_id
 
 # turn 'hsas' list into a data frame column
-hsas_df <- enframe(hsas)
+hsas_df <- tibble::enframe(hsas)
 
 # bind with initial limma results
 p_table_1 <- left_join(init_lim_table, 
@@ -2612,17 +2592,6 @@ plot_END_0.25
 plot_END_0.1
 ```
 
-Save plot
-```{r}
-require(cowplot)
-plots_END <- plot_grid(plot_END_1, plot_END_0.5, plot_END_0.25, plot_END_0.1, ncol = 4)
-# ggsave("~/Desktop/Uni Air/CSIRO/AD_project/Working/comp_volc_plot_END_thresholds.jpeg", plot = plots_END, device = "jpeg", width = 100, height = 30, units = "cm")
-
-plots_END
-```
-
-
-
 ### Volcano plots comparing nominal p-values
 
 ```{r}
@@ -2645,17 +2614,13 @@ c <- vol_plot(p_table_7, xvar = "logFC_END_DE_only", yvar = "FDR_END_DE_only", t
 d <- vol_plot(p_table_7, xvar = "logFC_init_limma", yvar = "FDR_init_limma", title = "Initial limma: PET-pos v -neg", FDR = T)
 e <- vol_plot(p_table_7, xvar = "logFC_END_0.5", yvar = "FDR_END_0.5", title = "END with genes in 0.5 percentile", FDR = T, label_type = "network")
 f <- vol_plot(p_table_7, xvar = "logFC_END_DE_only", yvar = "FDR_END_DE_only", title = "END with DE genes only", FDR = T, label_limit = 0.005, label_type = "network")
+
+a
+b
+c
+d
+e
+f
 ```
 
-
-```{r}
-require(cowplot)
-comp_plot1 <- plot_grid(a, b, c, ncol = 3)
-comp_plot1
-# ggsave("~/Desktop/Uni Air/CSIRO/AD_project/Working/comp_volc_plot_root_genes.jpeg", plot = comp_plot1, device = "jpeg", width = 100, height = 30, units = "cm")
-
-comp_plot2 <- plot_grid(d, e, f, ncol = 3)
-comp_plot2
-# ggsave("~/Desktop/Uni Air/CSIRO/AD_project/Working/comp_volc_plot_networks.jpeg", plot = comp_plot2, device = "jpeg", width = 100, height = 30, units = "cm")
-```
 
